@@ -1,0 +1,156 @@
+"""Weis (2014) Figure 4 -- single-phase heating fronts. 3x2 panels: rows {high, moderate, low}
+pressure (hP/mP/lP), columns {horizontal, vertical}, each showing temperature (red, left axis) and
+pressure (blue, right axis) vs distance. The single weis brine engine at z=0 for PPU / HU / HU-mwp,
+overlaid on the digitized paper reference. Each panel has its own BC preset and final time; the heavy
+N=800 runs are cached in ``_cache/`` (some are 1500 yr).
+
+    python reproduce_weis_fig_4.py            # compute (or load cache) + render figures/reproduce_weis_fig_4
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fig_weis_common as C  # noqa: E402  (pins BLAS threads on import)
+import weis_1d_solver as m   # noqa: E402
+import plot_style as ps      # noqa: E402
+
+N = 800
+
+
+def _K(celsius):
+    return celsius + 273.15
+
+
+# Fig-4 single-phase BC presets in SI (p [Pa], T [K], z=0); linear initial pressure, T_init = T_out.
+# Extracted from model_configuration/bc_description/bc_market.py (BC_single_phase_{high,moderate,low}).
+FIG4_BC = {
+    "hp": dict(p_left=50e6, T_left=_K(350), z_left=0.0, p_right=25e6, T_right=_K(150), T_init=_K(150), z_init=0.0),
+    "mp": dict(p_left=40e6, T_left=_K(450), z_left=0.0, p_right=20e6, T_right=_K(300), T_init=_K(300), z_init=0.0),
+    "lp": dict(p_left=15e6, T_left=_K(500), z_left=0.0, p_right=1e6,  T_right=_K(350), T_init=_K(350), z_init=0.0),
+}
+# Final time [yr] per (pressure level, orientation) -- paper Fig-4 snapshots (single_phase solver).
+FIG4_TF = {
+    ("hp", "horizontal"): 250,  ("hp", "vertical"): 750,
+    ("mp", "horizontal"): 120,  ("mp", "vertical"): 350,
+    ("lp", "horizontal"): 1500, ("lp", "vertical"): 1500,
+}
+LEVELS = ("hp", "mp", "lp")
+LEVEL_LABEL = {"hp": "high", "mp": "moderate", "lp": "low"}
+ORIENTS = ("horizontal", "vertical")
+
+# PorePy single-phase overlay (mirrors reproduce_weis_fig_5): the converged profile from
+# single_phase_porepy_1d_solver, cached as _cache/fig4_porepy_case_{hP,mP,lP}_{orient}_lgraded.pkl --
+# the SAME graded OBL as Fig 5. Drawn as black x markers over the weis-HU T/p curves.
+POREPY_C = "black"
+POREPY_LABEL = r"HU-PorePy"
+AUTORUN_POREPY = True                          # generate a missing overlay pickle by running PorePy
+_PP_CASE = {"hp": "case_hP", "mp": "case_mP", "lp": "case_lP"}   # Fig-4 level -> single-phase case name
+
+
+def _load_porepy(lvl, orient):
+    """single_phase_porepy_1d_solver pickle (x[m], T[K], p[MPa]) for Fig-4 panel (lvl, orient),
+    normalised to the SI plot convention (y[m], p -> Pa) that ``ps.to_plot_units`` consumes. If the
+    pickle is missing and ``AUTORUN_POREPY``, run the PorePy single-phase solver to make it (lazy
+    import, so a warm-cache re-plot never imports porepy). Returns the dict, or None if unavailable."""
+    import pickle
+    case_name = _PP_CASE[lvl]
+    path = os.path.join(C.CACHE_DIR, f"fig4_porepy_{case_name}_{orient}_l{m.TABLE_LEVEL}.pkl")
+    if not os.path.exists(path) and AUTORUN_POREPY:
+        try:
+            import single_phase_porepy_1d_solver as sp1d    # lazy: imports porepy only on a cold cache
+            print(f"[fig4] porepy overlay cache missing for {case_name}/{orient} -- running "
+                  f"single_phase_porepy_1d_solver.run_case (heavy: PorePy solve) ...", flush=True)
+            sp1d.run_case(case_name, orient)                # writes the same pickle path
+        except Exception as exc:                            # never let an overlay break the figure
+            print(f"[fig4] porepy overlay auto-run failed for {case_name}/{orient}: {exc}", flush=True)
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        d = dict(pickle.load(f))
+    print(f"[fig4-porepy] ({case_name!r}, {orient!r})   cached total_it={d.get('total_it')}", flush=True)
+    # x->y[m], p MPa->Pa (SI, ps.to_plot_units); total_it is None on pre-total_it caches (regenerate to show it)
+    return {"y": d["x"], "T": d["T"], "p": d["p"] * 1.0e6, "total_it": d.get("total_it")}
+
+
+def compute(N=N, parallel=True, skip=frozenset()):
+    m.prebuild_table_caches()
+    tasks = []
+    for lvl in LEVELS:
+        for orient in ORIENTS:
+            bc = {**FIG4_BC[lvl], "tf_yr": FIG4_TF[(lvl, orient)]}
+            for sk in C.active_schemes(skip):               # drop --skip-solver weis schemes
+                tasks.append(((sk, lvl, orient), f"fig4_{lvl}", sk, orient, bc, N, False, False))
+    return C.run_tasks("fig4", tasks, parallel=parallel)
+
+
+def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    ps.apply_style()
+    fig, axes = plt.subplots(3, 2, figsize=(ps.TEXTWIDTH_IN, 7.4), sharex=True)
+    letters = (("(a)", "(b)"), ("(c)", "(d)"), ("(e)", "(f)"))
+    panels = []
+    has_pp = False                                   # True once any PorePy overlay is actually drawn
+    for i, lvl in enumerate(LEVELS):
+        for j, orient in enumerate(ORIENTS):
+            ax_tp = axes[i, j]; ax_p = ax_tp.twinx(); ax_p.grid(False)
+            res = {sk: out[(sk, lvl, orient)] for sk in ps.SCHEMES if (sk, lvl, orient) in out}
+            panels.append(res)
+            C.draw_tp(ax_tp, ax_p, res,
+                      ref_T=C.ref_csv(f"fig_4_{lvl}_{orient}_temperature_raw.csv"),
+                      ref_p=C.ref_csv(f"fig_4_{lvl}_{orient}_pressure_raw.csv"))
+            pp_res = None if C.is_skipped("hu-porepy", skip) else _load_porepy(lvl, orient)  # PorePy overlay
+            pp_it = pp_res.get("total_it") if pp_res else None
+            if pp_res is not None:                          # PorePy overlay: warm T / cool p, PorePy dash
+                has_pp = True
+                for ax, fld, col in ((ax_tp, "T", ps.POREPY["warm"]), (ax_p, "p", ps.POREPY["cool"])):
+                    xx, yy = ps.to_plot_units(pp_res, fld)
+                    ax.plot(xx, yy, color=col, ls=ps.POREPY["dash"], lw=ps.CURVE_LW, zorder=6)
+            ax_tp.set_xlim(0.0, 2.0)
+            ps.panel_tag(ax_tp, letters[i][j], loc=(0.04, 0.09), va="bottom")
+            if i == 0:
+                ax_tp.set_title(fr"\textbf{{{orient.capitalize()}}}")
+            # per-panel iteration counts, PPU/HU/HU-mwp + PorePy (when its cache carries total_it),
+            # under a bold "<years> yr / total it." header (the time varies per panel)
+            C.iteration_legend(ax_tp, res, loc="upper right", fontsize=6.0,
+                               title=(fr"\textbf{{{FIG4_TF[(lvl, orient)]} yr}}" + "\n"
+                                      + r"\textbf{total it.}"),
+                               extra=([(ps.POREPY["warm"], ps.POREPY["dash"], pp_it)] if pp_it is not None else None))
+            if j == 0:
+                ax_tp.set_ylabel(ps.FIELD_LABEL["T"], color=C.WEIS_T)
+                ax_tp.tick_params(axis="y", colors=C.WEIS_T)
+                ax_p.tick_params(axis="y", labelright=False)
+            else:
+                ax_p.set_ylabel(ps.FIELD_LABEL["p"], color=C.WEIS_P)
+                ax_p.tick_params(axis="y", colors=C.WEIS_P)
+                ax_tp.tick_params(axis="y", labelleft=False)
+    for ax in axes[-1, :]:
+        ax.set_xlabel(ps.DIST_LABEL)
+
+    handles = C.scheme_handles(only=C.active_schemes(skip))
+    if has_pp:                                          # key the overlay only when it was actually drawn
+        handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW,
+                              label=POREPY_LABEL))
+    handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"$T$ (warm, left)"),
+                Line2D([0], [0], color=ps.SCHEMES["hu"]["cool"], ls="-", lw=3, label=r"$p$ (cool, right)"),
+                C.ref_legend_handle()]
+    fig.tight_layout()
+    ps.bottom_legend(fig, handles, [h.get_label() for h in handles], ncol=4)
+    ps.savefig(fig, stem, C.OUT_DIR)
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Weis (2014) Fig 4 (single-phase heating).")
+    ap.add_argument("--skip-solver", default="", dest="skip",
+                    help="comma-separated solvers to skip: ppu, hu, hu-mwp, hu-porepy")
+    args = ap.parse_args(argv)
+    skip = C.parse_skip(args.skip)
+    plot(compute(skip=skip), skip=skip)
+
+
+if __name__ == "__main__":
+    main()

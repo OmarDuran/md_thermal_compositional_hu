@@ -1,0 +1,15 @@
+# Only the sources and the input tables go into the image; run output stays out.
+*
+!thermal_compositional_flow/**/*.py
+!thermal_compositional_flow/**/*.md
+!thermal_compositional_flow/benchmark_figures_data/**
+
+# OBL tables (not in git, must be on disk).
+# TODO: fetch these from a Zenodo or GitHub Release archive with a checksum instead.
+!thermal_compositional_flow/model_configuration/constitutive_description/driesner_vtk_files/brine_graded_xph.vtr
+!thermal_compositional_flow/model_configuration/constitutive_description/driesner_vtk_files/brine_graded_xpt.vtr
+!thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_xph.vtr
+!thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_xpt.vtr
+!thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_offset.txt
+
+**/__pycache__

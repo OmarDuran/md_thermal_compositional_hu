@@ -1,0 +1,543 @@
+from abc import abstractmethod
+from typing import Literal, cast
+
+import numpy as np
+
+import porepy as pp
+from porepy.applications.md_grids.mdg_library import benchmark_3d_case_3
+from porepy.fracs.fracture_network_3d import FractureNetwork3d
+
+
+class Geometry(pp.PorePyModel):
+    @abstractmethod
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        pass
+
+    @staticmethod
+    def harvest_sphere_members(xc, rc, x):
+        dx = x - xc
+        r = np.linalg.norm(dx, axis=1)
+        return np.where(r < rc, True, False)
+
+
+class Benchmark2DC1(Geometry):
+    def set_fractures(self) -> None:
+        self._fractures = pp.applications.md_grids.fracture_sets.benchmark_2d_case_1()
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "simplex")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(0.1, "m")
+        mesh_args: dict[str, float] = {"cell_size": cell_size}
+        return mesh_args
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            x = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            x = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        sides = self.domain_boundary_sides(sd)
+        idx = sides.all_bf
+
+        rc = 0.1
+        xc = np.array([0.0, 0.0, 0.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        inlet_facets = idx[logical]
+
+        rc = 0.1
+        xc = np.array([1.0, 1.0, 0.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        outlet_facets = idx[logical]
+
+        return inlet_facets, outlet_facets
+
+
+class Benchmark2DC3(Geometry):
+    def set_fractures(self) -> None:
+        self._fractures = pp.applications.md_grids.fracture_sets.benchmark_2d_case_3()
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "simplex")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(0.1, "m")
+        mesh_args: dict[str, float] = {"cell_size": cell_size}
+        return mesh_args
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            x = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            x = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        sides = self.domain_boundary_sides(sd)
+        idx = sides.all_bf
+
+        rc = 0.1
+        xc = np.array([0.0, 0.0, 0.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        inlet_facets = idx[logical]
+
+        rc = 0.1
+        xc = np.array([1.0, 1.0, 0.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        outlet_facets = idx[logical]
+
+        return inlet_facets, outlet_facets
+
+
+class Benchmark3DC3(Geometry):
+    def set_geometry(self) -> None:
+        """Create mixed-dimensional grid and fracture network."""
+
+        # Create mixed-dimensional grid and fracture network.
+        self.mdg, self.fracture_network = benchmark_3d_case_3(
+            refinement_level=self.params.get("refinement_level", 0)
+        )
+        self.nd: int = self.mdg.dim_max()
+
+        # Obtain domain and fracture list directly from the fracture network.
+        self._domain = cast(pp.Domain, self.fracture_network.domain)
+        self._fractures = self.fracture_network.fractures
+
+        # Create projections between local and global coordinates for fracture grids.
+        pp.set_local_coordinate_projections(self.mdg)
+
+        self.set_well_network()
+        if len(self.well_network.wells) > 0:
+            # Compute intersections.
+            assert isinstance(self.fracture_network, FractureNetwork3d)
+            pp.compute_well_fracture_intersections(
+                self.well_network, self.fracture_network
+            )
+            # Mesh wells and add fracture + intersection grids to mixed-dimensional
+            # grid along with these grids' new interfaces to fractures.
+            self.well_network.mesh(self.mdg)
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            x = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            x = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        sides = self.domain_boundary_sides(sd)
+        idx = sides.all_bf
+
+        rc = 0.1
+        xc = np.array([0.0, 0.0, 0.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        inlet_facets = idx[logical]
+
+        rc = 0.1
+        xc = np.array([1.0, 2.25, 1.0])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        outlet_facets = idx[logical]
+
+        return inlet_facets, outlet_facets
+
+
+class SimpleGeometry(Geometry):
+    def set_domain(self) -> None:
+        dimension = 2
+        size_x = self.units.convert_units(10.0, "m")
+        size_y = self.units.convert_units(10.0, "m")
+        size_z = self.units.convert_units(1.0, "m")
+        box: dict[str, pp.number] = {"xmax": size_x}
+        if dimension > 1:
+            box.update({"ymax": size_y})
+        if dimension > 2:
+            box.update({"zmax": size_z})
+        self._domain = pp.Domain(box)
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "simplex")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(1.0, "m")
+        mesh_args: dict[str, float] = {"cell_size": cell_size}
+        return mesh_args
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            x = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            x = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        sides = self.domain_boundary_sides(sd)
+        idx = sides.all_bf
+
+        z_level = 0.0
+        if self._domain.dim == 3:
+            z_level = 0.5
+
+        rc = 0.25
+        xc = np.array([0.0, 0.5, z_level])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        inlet_facets = idx[logical]
+
+        rc = 0.25
+        xc = np.array([10.0, 9.5, z_level])
+        logical = Geometry.harvest_sphere_members(xc, rc, x[idx])
+        outlet_facets = idx[logical]
+
+        return inlet_facets, outlet_facets
+
+
+class SimpleGeometryHorizontal(Geometry):
+    """A class to represent a simple 1D geometry for a simulation domain.
+    The start of domain serve as inlet and end of domain serves as the outlet
+    """
+    _ref_level = 0.25
+    _dist_from_ref_point: float = _ref_level * 5.0
+    _inlet_centre: np.ndarray = np.array([0.0, _ref_level * 5.0, 0.0])
+    _outlet_centre: np.ndarray = np.array([2000.0, _ref_level * 5.0, 0.0])
+
+    def set_domain(self) -> None:
+        x_length = self.units.convert_units(2000.0, "m")
+        y_length = self.units.convert_units(self._ref_level * 5.0, "m")
+        box: dict[str, pp.number] = {"xmax": x_length, "ymax": y_length}
+        self._domain = pp.Domain(box)
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(self._ref_level * 10.0, "m")
+        # Thin horizontal strip -- 1 cell across y. Set cell_size_y = domain height so the
+        # mesher does not clamp it (which warns "cell_size_y > domain").
+        y_length = self.units.convert_units(self._ref_level * 5.0, "m")
+        mesh_args: dict[str, float] = {"cell_size": cell_size, "cell_size_y": y_length}
+        return mesh_args
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            face_centers = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            face_centers = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        boundary_faces = self.domain_boundary_sides(sd)
+        bf_indices = boundary_faces.all_bf
+
+        def find_facets(center: np.ndarray) -> np.ndarray:
+            logical = Geometry.harvest_sphere_members(
+                center, self._dist_from_ref_point, face_centers[bf_indices]
+            )
+            return bf_indices[logical]
+
+        inlet_facets = find_facets(self._inlet_centre)
+        outlet_facets = find_facets(self._outlet_centre)
+        return inlet_facets, outlet_facets
+
+
+class SimpleGeometryVertical(Geometry):
+    """A class to represent a simple 1D geometry for a simulation domain.
+    The start of domain serve as inlet and end of domain serves as the outlet
+    """
+    _ref_level = 0.25
+    _dist_from_ref_point: float = _ref_level * 5.0
+    _inlet_centre: np.ndarray = np.array([_ref_level * 5.0, 0.0, 0.0])
+    _outlet_centre: np.ndarray = np.array([_ref_level * 5.0, 2000.0, 0.0])
+
+    def set_domain(self) -> None:
+        x_length = self.units.convert_units(self._ref_level * 5.0, "m")
+        y_length = self.units.convert_units(2000.0, "m")
+        box: dict[str, pp.number] = {"xmax": x_length, "ymax": y_length}
+        self._domain = pp.Domain(box)
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(self._ref_level  * 10.0, "m")
+        # Thin vertical strip -- 1 cell across x. Set cell_size_x = domain width so the
+        # mesher does not clamp it (which warns "cell_size_x > domain").
+        x_length = self.units.convert_units(self._ref_level * 5.0, "m")
+        mesh_args: dict[str, float] = {"cell_size": cell_size, "cell_size_x": x_length}
+        return mesh_args
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if isinstance(sd, pp.Grid):
+            face_centers = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            face_centers = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        boundary_faces = self.domain_boundary_sides(sd)
+        bf_indices = boundary_faces.all_bf
+
+        def find_facets(center: np.ndarray) -> np.ndarray:
+            logical = Geometry.harvest_sphere_members(
+                center, self._dist_from_ref_point, face_centers[bf_indices]
+            )
+            return bf_indices[logical]
+
+        inlet_facets = find_facets(self._inlet_centre)
+        outlet_facets = find_facets(self._outlet_centre)
+        return inlet_facets, outlet_facets
+
+
+class SimpleGeometryHayekVertical(Geometry):
+    """A class to represent a simple 1D geometry for a simulation domain.
+    The start of domain serve as inlet and end of domain serves as the outlet
+    """
+
+    _dist_from_ref_point: float = 0.05
+    _inlet_centre: np.ndarray = np.array([0.05, 0.0, 0.0])
+    _outlet_centre: np.ndarray = np.array([0.05, 7.0, 0.0])
+
+    def set_domain(self) -> None:
+        x_length = self.units.convert_units(0.1, "m")
+        y_length = self.units.convert_units(7.0, "m")
+        box: dict[str, pp.number] = {"xmax": x_length, "ymax": y_length}
+        self._domain = pp.Domain(box)
+
+    def grid_type(self) -> str:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(0.1, "m")
+        cell_size_y = self.units.convert_units(0.1, "m")
+        mesh_args: dict[str, float] = {
+            "cell_size": cell_size,
+            "cell_size_y": cell_size_y,
+        }
+        return mesh_args
+
+    def get_inlet_outlet_sides(self, sd: pp.Grid | pp.BoundaryGrid) -> np.ndarray:
+        if isinstance(sd, pp.Grid):
+            face_centers = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            face_centers = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        boundary_faces = self.domain_boundary_sides(sd)
+        bf_indices = boundary_faces.all_bf
+
+        def find_facets(center: np.ndarray) -> np.ndarray:
+            logical = Geometry.harvest_sphere_members(
+                center, self._dist_from_ref_point, face_centers[bf_indices]
+            )
+            return bf_indices[logical]
+
+        inlet_facets = find_facets(self._inlet_centre)
+        outlet_facets = find_facets(self._outlet_centre)
+        return inlet_facets, outlet_facets
+
+
+class SimpleGeometryHayekVertical2D(Geometry):
+    """A class to represent a simple 1D geometry for a simulation domain.
+    The start of domain serve as inlet and end of domain serves as the outlet
+    """
+
+    _dist_from_ref_point: float = 1.0
+    _inlet_centre: np.ndarray = np.array([2.5, 0.0, 0.0])
+    _outlet_centre: np.ndarray = np.array([2.5, 5.0, 0.0])
+
+    def set_domain(self) -> None:
+        x_length = self.units.convert_units(5.0, "m")
+        y_length = self.units.convert_units(5.0, "m")
+        box: dict[str, pp.number] = {"xmax": x_length, "ymax": y_length}
+        self._domain = pp.Domain(box)
+
+    # def set_fractures(self) -> None:
+    #     points = (
+    #             np.array(
+    #                 [
+    #                     [0.0, 2.0],
+    #                     [1.0, 4.0],
+    #                 ]
+    #             ).T
+    #     )
+    #     fracs = np.array([[0, 1]]).T
+    #     self._fractures = pp.frac_utils.pts_edges_to_linefractures(points, fracs)
+
+    def grid_type(self) -> str:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(1.0, "m")
+        cell_size_y = self.units.convert_units(1.0, "m")
+        mesh_args: dict[str, float] = {
+            "cell_size": cell_size,
+            "cell_size_y": cell_size_y,
+        }
+        return mesh_args
+
+    def get_inlet_outlet_sides(self, sd: pp.Grid | pp.BoundaryGrid) -> np.ndarray:
+        if isinstance(sd, pp.Grid):
+            face_centers = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            face_centers = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        boundary_faces = self.domain_boundary_sides(sd)
+        bf_indices = boundary_faces.all_bf
+
+        def find_facets(center: np.ndarray) -> np.ndarray:
+            logical = Geometry.harvest_sphere_members(
+                center, self._dist_from_ref_point, face_centers[bf_indices]
+            )
+            return bf_indices[logical]
+
+        inlet_facets = find_facets(self._inlet_centre)
+        outlet_facets = find_facets(self._outlet_centre)
+        return inlet_facets, outlet_facets
+
+class Figure8Geometry2D(Geometry):
+
+    _inlet_dist_from_ref_point: float = 500.0
+    _outlet_dist_from_ref_point: float = 4500.0
+    _inlet_centre: np.ndarray = np.array([4500.0, 0.0, 0.0])
+    _outlet_centre: np.ndarray = np.array([4500.0, 3000.0, 0.0])
+
+    def set_domain(self) -> None:
+        x_length = self.units.convert_units(9000.0, "m")
+        y_length = self.units.convert_units(3000.0, "m")
+        box: dict[str, pp.number] = {"xmax": x_length, "ymax": y_length}
+        self._domain = pp.Domain(box)
+
+    # def set_fractures(self) -> None:
+    #     points = (
+    #             np.array(
+    #                 [
+    #                     [0.0, 2.0],
+    #                     [1.0, 4.0],
+    #                 ]
+    #             ).T
+    #     )
+    #     fracs = np.array([[0, 1]]).T
+    #     self._fractures = pp.frac_utils.pts_edges_to_linefractures(points, fracs)
+
+    def grid_type(self) -> str:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        cell_size = self.units.convert_units(100.0, "m")
+        mesh_args: dict[str, float] = {
+            "cell_size": cell_size,
+        }
+        return mesh_args
+
+    def get_inlet_outlet_sides(self, sd: pp.Grid | pp.BoundaryGrid) -> np.ndarray:
+        if isinstance(sd, pp.Grid):
+            face_centers = sd.face_centers.T
+        elif isinstance(sd, pp.BoundaryGrid):
+            face_centers = sd.cell_centers.T
+        else:
+            raise ValueError("Type not expected.")
+        boundary_faces = self.domain_boundary_sides(sd)
+        bf_indices = boundary_faces.all_bf
+
+        def find_facets_top(center: np.ndarray, distant_from_ref_point: np.ndarray) -> np.ndarray:
+            filtered_idx = np.where(face_centers[bf_indices][:, 1] > 2999.0)
+            logical = Geometry.harvest_sphere_members(
+                center, distant_from_ref_point, face_centers[bf_indices][filtered_idx]
+            )
+            return bf_indices[filtered_idx][logical]
+
+        def find_facets_bottom(center: np.ndarray, distant_from_ref_point: np.ndarray) -> np.ndarray:
+            logical = Geometry.harvest_sphere_members(
+                center, distant_from_ref_point, face_centers[bf_indices]
+            )
+            return bf_indices[logical]
+
+        inlet_facets = find_facets_bottom(self._inlet_centre, self._inlet_dist_from_ref_point)
+        outlet_facets = find_facets_top(self._outlet_centre, self._outlet_dist_from_ref_point)
+        return inlet_facets, outlet_facets
+
+
+# Impermeable barrier layers for the WA-HU Ex. 6.3 test, digitized from Bosma et al.
+# (2022, CMAME 388:114288) Fig. 5(a). Keys = FIGURE rows (top = 0, gravity downward) on a
+# 100-cell grid; values = inclusive barrier-cell column ranges. Columns NOT listed are the
+# openings in that layer. (Exact layout is in ref [39]; this is a faithful read of Fig. 5a.)
+#
+# SEVEN layers, re-extracted at pixel resolution from fig5_raw_a.png (see
+# benchmark_figures_data/wahu_fig5_digitized/fig5_barriers_and_saturations.py). Subregion
+# (segment) counts per layer, bottom -> top: 3, 6, 4, 2, 5, 2, 5. (The prior read had only
+# 6 layers -- the depth-23 layer was missing -- and over-merged several openings.)
+_BARRIER_LAYERS_FIG = {
+    16: [(5, 19), (23, 25), (40, 59), (70, 79), (82, 99)],                    # 5 subregions
+    23: [(18, 44), (62, 84)],                                                 # 2
+    38: [(0, 9), (18, 25), (38, 49), (55, 74), (90, 94)],                     # 5
+    45: [(23, 59), (63, 70)],                                                 # 2
+    58: [(2, 17), (22, 29), (48, 59), (70, 99)],                             # 4
+    74: [(0, 15), (19, 22), (24, 53), (58, 70), (75, 76), (84, 92)],          # 6
+    82: [(5, 18), (24, 42), (58, 94)],                                       # 3 (bottom)
+}
+
+
+class GeometryBarriers2D(Geometry):
+    """100 m x 100 m vertical Cartesian box (1 m cells) with horizontal impermeable
+    barrier layers, for the immiscible 3-phase gravity-segregation-through-barriers test
+    (Bosma et al. 2022, Ex. 6.3 / Fig. 5). The box is CLOSED (no inlet/outlet).
+
+    Barrier cells are reported by :meth:`barrier_cell_mask`; the run script's
+    ``permeability`` override multiplies those cells' permeability by a tiny factor.
+    """
+
+    _length = 100.0     # m, both directions
+    _cell = 1.0         # m
+
+    def set_domain(self) -> None:
+        length = self.units.convert_units(self._length, "m")
+        self._domain = pp.Domain({"xmax": length, "ymax": length})
+
+    def grid_type(self) -> Literal["simplex", "cartesian", "tensor_grid"]:
+        return self.params.get("grid_type", "cartesian")
+
+    def meshing_arguments(self) -> dict:
+        return {"cell_size": self.units.convert_units(self._cell, "m")}
+
+    def get_inlet_outlet_sides(
+        self, sd: pp.Grid | pp.BoundaryGrid
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """(inlet, outlet) facets: inlet is empty (closed bottom/sides), outlet = TOP.
+        """
+        sides = self.domain_boundary_sides(sd)
+        top_facets = np.where(sides.north)[0]            # max-y edge == physical top (2D)
+        inlet_facets = np.array([], dtype=int)           # bottom + sides stay closed
+        return inlet_facets, top_facets
+
+    def barrier_cell_mask(self, sd: pp.Grid) -> np.ndarray:
+        """Per-cell boolean mask, True for impermeable barrier cells.
+
+        Figure rows count from the TOP (gravity down) while PorePy ``y`` increases UPWARD,
+        so figure_row = (n - 1) - porepy_row. The digitized 100-grid layout is scaled if
+        the mesh is not exactly 100 cells per side.
+        """
+        length = self.units.convert_units(self._length, "m")
+        cell = self.units.convert_units(self._cell, "m")
+        n = int(round(length / cell))                  # cells per side (= 100 for 1 m cells)
+        xc = sd.cell_centers
+        col = np.floor(xc[0] / cell).astype(int)
+        prow = np.floor(xc[1] / cell).astype(int)      # PorePy row, 0 = bottom
+        figrow = (n - 1) - prow                        # figure row, 0 = top
+        scale = n / 100.0
+        mask = np.zeros(sd.num_cells, dtype=bool)
+        for fig_r, segments in _BARRIER_LAYERS_FIG.items():
+            in_row = figrow == int(round(fig_r * scale))
+            for a, b in segments:
+                mask |= in_row & (col >= int(round(a * scale))) & (col <= int(round(b * scale)))
+        return mask
+
