@@ -1546,7 +1546,10 @@ class _FlowModelBaseCore(ReorderedTransportPredictor):
         max the convergence criterion tests, so the search and the stopping test are aligned on the same
         (binding) equation -- fixing the case where the LS reduced raw-L2 (dominated by an already-small
         energy row) while the mass row bound.  Falls back to raw L2 only if the scaled metric is
-        unavailable (no row scales yet / empty)."""
+        unavailable (no row scales yet / empty). ``params["line_search_merit"] = "l2"`` descends the
+        raw L2 norm instead (the Fig-6 salt column needs it to cross the halite front)."""
+        if self.params.get("line_search_merit", "scaled") == "l2":
+            return float(np.linalg.norm(residual))
         try:
             per_eq = RelativeStorageLebesgueMetric(self)(np.asarray(residual, float))
             if per_eq:

@@ -32,8 +32,15 @@ RUN apt-get update && \
         texlive-latex-base texlive-latex-extra texlive-fonts-recommended cm-super dvipng && \
     rm -rf /var/lib/apt/lists/*
 
-# Packages used by the scripts on top of PorePy; petsc4py enables the CPR linear solver.
-RUN pip install --no-cache-dir pyvista seaborn meshio CoolProp petsc petsc4py
+# Packages used by the scripts on top of PorePy.
+RUN pip install --no-cache-dir pyvista seaborn meshio CoolProp
+
+# petsc4py enables the CPR linear solver (used by the CO2 case). PETSc compiles from
+# source (needs BLAS/LAPACK), so it gets its own layer.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libopenblas-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir petsc petsc4py
 
 ENV EXAMPLE_DIR=${POREPY_HOME}/src/porepy/examples/geothermal_flow
 

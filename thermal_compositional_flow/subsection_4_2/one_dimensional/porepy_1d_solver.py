@@ -302,6 +302,9 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
         # and collapse dt to dt_min. Both columns benefit -- pw has a boiling front too.
         "slave_eliminated_secondaries": True,
     }
+    if column == "salt":
+        # The halite front stalls Newton with the row-scaled line-search merit; descend raw L2.
+        params["line_search_merit"] = "l2"
 
     class GeothermalWaterFlowModel(DriesnerPhaseExport, ModelGeometryH, BC_fig6, ICcls,
                                    DriesnerBrineFlowModel):
@@ -317,7 +320,11 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
     # NOTE: the salt column historically needed an absolute 1e-5 bar to avoid an energy limit cycle at
     # the halite/boiling front (see git history). If it re-appears on this column, override here, e.g.
     # ``model.default_nonlinear_criteria(tol=1.0e-5)`` or a pp.EquationBasedLebesgueMetric at 1e-5.
-    solver_params = model.default_nonlinear_criteria()
+    # Salt column: cap Newton at 19 so a step needing all 20 iterations is cut, not accepted at full
+    # dt (PorePy now lets convergence win over the max-iteration guard, and those large steps carry
+    # the run into the halite front, where it stalls).
+    solver_params = model.default_nonlinear_criteria(
+        max_iterations=19 if column == "salt" else 20)
     print(f"\n=== PorePy fig6 {column} (tf={tf_years:.0f} yr, tables={xph_name}) ===", flush=True)
     runner = pp.ModelRunner(model, solver_params,
                             nonlinear_solver=geothermal_nonlinear_solver(solver_params))
