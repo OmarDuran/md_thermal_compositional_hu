@@ -12,7 +12,13 @@
 # Run with memory capped at 16 GB (outputs are written next to each script, inside the
 # container):
 #
-#    docker run -ti --memory=16g --memory-swap=16g md_thermal_compositional_hu
+#    docker run -ti --memory=16g --memory-swap=16g md_thermal_compositional_hu bash
+#
+# and inside the container, one section at a time (README.md explains how to copy the
+# figures and tables back to the host):
+#
+#    ./run_subsection_4_1.sh
+#    ./run_subsection_4_2.sh
 #
 # The full paper runs take about 9-10 hours per section, 48 hours or more in total.
 #
@@ -32,8 +38,9 @@ RUN apt-get update && \
         texlive-latex-base texlive-latex-extra texlive-fonts-recommended cm-super dvipng && \
     rm -rf /var/lib/apt/lists/*
 
-# Packages used by the scripts on top of PorePy.
-RUN pip install --no-cache-dir pyvista seaborn meshio CoolProp
+# Packages used by the scripts on top of PorePy (chemicals is an optional PorePy
+# dependency that the compositional materials import).
+RUN pip install --no-cache-dir pyvista seaborn meshio CoolProp chemicals
 
 # petsc4py enables the CPR linear solver (used by the CO2 case). PETSc compiles from
 # source (needs BLAS/LAPACK), so it gets its own layer.

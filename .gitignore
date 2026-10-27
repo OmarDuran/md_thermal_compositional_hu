@@ -224,6 +224,7 @@ __marimo__/
 
 # Run script output (simulation results, meshes, logs, figures, caches)
 visualization*/
+thermal_compositional_flow/paper_figures/
 *.msh
 *.geo_unrolled
 *.obltensor.npz

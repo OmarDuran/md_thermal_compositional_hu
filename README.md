@@ -1,2 +1,262 @@
 # md_thermal_compositional_hu
-Reproducibility scripts for "A Mixed-Dimensional Compositional Flow Model Incorporating Gravitational Effects"
+
+Reproducibility scripts for "A Mixed-Dimensional Compositional Flow Model Incorporating
+Gravitational Effects".
+
+The scripts extend the `geothermal_flow` example of [PorePy](https://github.com/pmgbergen/porepy)
+and run on its branch `buoyancy_flow_refactor`. Every figure and table of the numerical results
+(Section 4) and of Appendix B is produced by one of two run scripts:
+
+| Script | Paper content | Folder |
+|---|---|---|
+| `run_subsection_4_1.sh` | Section 4.1, immiscible multiphase gravitational segregation | `subsection_4_1/` |
+| `run_subsection_4_2.sh` | Section 4.2, Driesner correlations (1D and 2D); Section 4.3, water–CO2 across a fracture network; Appendix B | `subsection_4_2/` |
+
+Both scripts are in `thermal_compositional_flow/`. They run each simulation as a separate
+process, one at a time, and finish by copying the paper figures and tables to
+`thermal_compositional_flow/paper_figures/`. That folder has the same layout and file names as
+the paper's `images/` folder.
+
+## Requirements
+
+### OBL tables
+
+These tables are too large for git and must be on disk before building the image:
+
+```
+thermal_compositional_flow/model_configuration/constitutive_description/driesner_vtk_files/brine_graded_xph.vtr
+thermal_compositional_flow/model_configuration/constitutive_description/driesner_vtk_files/brine_graded_xpt.vtr
+thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_xph.vtr
+thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_xpt.vtr
+thermal_compositional_flow/subsection_4_2/two_dimensional/h2o_co2_obl/h2o_co2_offset.txt
+```
+
+The brine tables are used by Section 4.2 and Appendix B; the water–CO2 tables are used by
+Section 4.3 and Appendix B.
+
+The first run builds a cache next to each brine table (`*.obltensor.npz`, about 0.9 GB). Later
+runs reuse it.
+
+### Docker (recommended)
+
+The image extends `porepy/dev`, switches PorePy to `buoyancy_flow_refactor`, and adds:
+- LaTeX, for the figure fonts;
+- PETSc, needed for the CPR solver of Section 4.3;
+- the Python packages the scripts use;
+- this repository and the tables, in place of the shipped example.
+
+Build the image from the root of this repository:
+
+```bash
+docker build -t md_thermal_compositional_hu .
+```
+
+`porepy/dev` is published for linux/amd64 only. On Apple silicon it runs under emulation, about
+6–7 times slower than native.
+
+### Native
+
+Use a PorePy checkout on `buoyancy_flow_refactor` and copy `thermal_compositional_flow/` over
+`src/porepy/examples/geothermal_flow/`. The extra packages are:
+- pyvista, seaborn, meshio, CoolProp, chemicals;
+- petsc4py, for Section 4.3;
+- a LaTeX installation, for the figures.
+
+Choose the interpreter with `PYTHON`, for example
+`PYTHON=~/miniconda/envs/porepy/bin/python ./run_subsection_4_1.sh`.
+
+## Running
+
+```bash
+./run_subsection_4_1.sh --list          # print the commands, run nothing
+./run_subsection_4_1.sh                 # all steps
+./run_subsection_4_1.sh checks column   # selected steps
+./run_subsection_4_2.sh co2 collect
+```
+
+`collect` only copies outputs that already exist. Run it alone to gather the results of steps
+run separately.
+
+The scripts pin BLAS threads to one (`OMP_NUM_THREADS=1` and related variables). Memory peaks at
+about 6 GB per run, so a 16 GB limit is enough. Do not start the two scripts at the same time.
+
+### Running in Docker and retrieving the results
+
+Inside the container, the scripts live in the example folder, which is also the working
+directory:
+
+```
+/workdir/porepy/src/porepy/examples/geothermal_flow
+```
+
+Everything a run writes stays inside the container until you copy it out. There are two ways
+to do this.
+
+**Mount a host folder (recommended).** Mount an empty host folder over `paper_figures/`.
+`collect` then writes the figures and tables straight to the host, and they survive the
+container:
+
+```bash
+mkdir -p results
+docker run --rm --memory=16g --memory-swap=16g \
+    -v "$PWD/results:/workdir/porepy/src/porepy/examples/geothermal_flow/paper_figures" \
+    md_thermal_compositional_hu ./run_subsection_4_1.sh
+```
+
+Run `./run_subsection_4_2.sh` the same way, one section at a time. Both write into `results/`,
+in the layout of the paper's `images/` folder. On Linux hosts the files are owned by root; take
+ownership with `sudo chown -R "$USER" results`.
+
+**Copy out with `docker cp`.** Name the container and leave out `--rm`, so it remains after
+the run:
+
+```bash
+docker run --name hu_section_4_1 --memory=16g --memory-swap=16g \
+    md_thermal_compositional_hu ./run_subsection_4_1.sh
+```
+
+Then copy from the stopped container to the host:
+
+```bash
+docker cp hu_section_4_1:/workdir/porepy/src/porepy/examples/geothermal_flow/paper_figures ./paper_figures
+```
+
+Copy a whole subsection folder in the same way when you also need the raw output:
+simulation snapshots (VTU/VTR), logs, Newton statistics, and the figures not used in the paper.
+This can be several GB.
+
+```bash
+docker cp hu_section_4_1:/workdir/porepy/src/porepy/examples/geothermal_flow/subsection_4_1 ./subsection_4_1_output
+```
+
+Remove the container afterwards with `docker rm hu_section_4_1`.
+
+`docker cp` also works on a running container, for example to fetch intermediate figures during
+a long run.
+
+For an interactive shell, end the `docker run -ti ...` command with `bash` instead of a run
+script, and start the scripts from the prompt. Without a command the container opens a Python
+prompt, the default of `porepy/dev`.
+
+## Section 4.1: immiscible gravitational segregation
+
+`run_subsection_4_1.sh`, in `subsection_4_1/`:
+
+| Step | Command | Paper output (`images/immiscible_multiphase_two_dimensional_flow/`) |
+|---|---|---|
+| `checks` | `completion_checks.py --quick`, then `completion_checks.check_monotonicity_porepy()` | `degenerate_equivalence.tex` (reduction-consistency table), `monotonicity.pdf` |
+| `column` | `column_segregation.py` | `column_segregation_passive_phase.pdf` |
+| `barriers` | `run_figures.py` | `comparison_saturation_maps_fixed_dim_4_phases.pdf`, `comparison_saturation_maps_mixed_dim_3_phases.pdf` |
+
+### `checks`
+
+The reduction-consistency table uses the coarse configuration (`--quick`), as in the paper:
+- standalone solver: 20 × 20 cells, 4 days;
+- PorePy: 5 m cells, 6 days.
+
+The monotonicity figure uses the full two-cell sweep. This step takes minutes.
+
+### `column`
+
+Runs the standalone solver with HU and PPU for the three densities of the passive phase:
+ρ_β = 1250, 1000 and 750 kg/m³, with K = 10 D, n_y = 200, over 60 days.
+
+### `barriers`
+
+`run_figures.py` runs only the simulations whose output is missing, one after another. In order:
+1. standalone PPU and HU-BM(mp), N = 3 and 4, fixed-dimensional (`vtr/`, `vtr_n4/`);
+2. PorePy HU, N = 3 and 4, fixed- and mixed-dimensional (`visualization_barriers[_frac]_hu_N<n>/`);
+3. standalone PPU and HU-BM(mp), N = 3, with the fractures as equi-dimensional bands (`vtr_frac/`).
+
+The equi-dimensional runs of item 3 are the slowest: the time step adapts to the 0.2 m band cells.
+
+`run_figures.py --list` shows what would run. Progress is reported as follows:
+- `PROGRESS.txt` holds the current case;
+- `progress/NN_*.log` holds the full solver log of each case.
+
+The Newton iteration counts quoted in the paper are in these files:
+
+| Comparison | Files |
+|---|---|
+| standalone, like for like | `vtr*/stats_{hu_mp,ppu}.txt` |
+| PorePy | `visualization_barriers*/run_statistics.txt` |
+
+Figures land in `figures/n3/`, `figures/n4/` and `figures/comparison/`. The extra figures there
+(conservation, enthalpy and temperature, L2 differences) back statements in the text that are
+marked "not shown".
+
+## Section 4.2, Section 4.3 and Appendix B
+
+`run_subsection_4_2.sh`, in `subsection_4_2/`:
+
+| Step | Command | Paper output (`images/`) | Paper location |
+|---|---|---|---|
+| `weis1d` | `one_dimensional/run_workflow.py --serial --pdf` | `weis_one_dimensional_flow/reproduce_weis_fig_{4,5,6}.pdf` | Fig. 5 in Section 4.2; Figs. 4 and 6 in Appendix B |
+| `plume` | `two_dimensional/porepy_2d_solver.py` ×2, then `fig10_gravity_comparison.py` | `weis_two_dimensional_flow/fig10_gravity_comparison.pdf` | Section 4.2 |
+| `co2` | `two_dimensional/run_co2_md.py` | `co2_two_dimensional_flow/co2_rho_h_contours.pdf`, `co2_breakthrough.pdf` | Section 4.3 |
+| `phz` | `two_dimensional/h2o_co2_obl/co2_phz_diagrams.py` | `co2_two_dimensional_flow/co2_phz_diagrams.pdf` | Appendix B |
+
+### `weis1d`
+
+Runs the standalone 1-D solver (PPU, HU, HU-mw), then the PorePy HU overlays, for the three
+Weis et al. (2014) benchmarks:
+- Fig. 4: single phase;
+- Fig. 5: two-phase boiling;
+- Fig. 6: brine with halite.
+
+Results are cached in `one_dimensional/_cache/`, and existing cache files are reused.
+
+`--serial` keeps the 1-D sweeps in one process. A parallel pool would load the tables once per
+worker. A parallel run from a cold cache took about 5 h.
+
+### `plume`
+
+Runs PorePy on the truncated 5 km × 2 km domain with an unstructured simplex mesh (100 m cells),
+a heat anomaly of Q = 9 W/m², and 25 kyr of simulated time:
+- TPFA: `--grid-type simplex --truncated-domain --q-anomaly 9`, into
+  `visualization_hu_simplex_trunc_q9/`;
+- MPFA: the same flags plus `--consistent`, into `visualization_hu_mpfa_simplex_trunc_q9/`.
+
+The recorded run times are 8.8 h for TPFA and 17.5 h for MPFA.
+
+### `co2`
+
+Runs three cases, each over 50 days with HU, the mixed-dimensional grid and 0.1 m cells:
+- TPFA;
+- MPFA (`--consistent`);
+- MPFA without gravity (`--consistent --no-gravity`).
+
+They write `visualization_co2_inject_hu_md[_mpfa][_nograv]/`. The script then plots the outlet
+breakthrough and the density and enthalpy contours. The linear solver is CPR through petsc4py.
+
+### `phz`
+
+Plots the phase regions and the saturation error of the water–CO2 table at z_CO2 = 0.1 and 0.3.
+It reads the tables in `h2o_co2_obl/` and compares them with a direct flash.
+
+### Not produced here
+
+The Water–NaCl error maps of Appendix B (`images/obl/error_map_*.png`) come from the table
+builder in the `opensowat` repository (`tools/run_brine_cases/render_graded_diagnostics.py`).
+
+The water–CO2 tables are rebuilt with `h2o_co2_obl/build_co2_compositional_table.py`, run from
+inside `h2o_co2_obl/`.
+
+## Repository layout
+
+```
+thermal_compositional_flow/
+  run_subsection_4_1.sh, run_subsection_4_2.sh   run scripts (this README)
+  model_configuration/       PorePy model, constitutive descriptions, Driesner tables
+  obl_sampler/               OBL table sampler
+  benchmark_figures_data/    digitized reference curves (Weis et al. 2014)
+  subsection_4_1/            Section 4.1: standalone N-phase solver, PorePy barrier model, plots
+  subsection_4_2/
+    one_dimensional/         Section 4.2 (1D) and Appendix B: Weis benchmarks
+    two_dimensional/         Section 4.2 (2D) plume; Section 4.3 water-CO2; h2o_co2_obl/ tables
+    three_dimensional/       3D solver, not used in the paper
+  paper_figures/             collected figures and tables (generated, not in git)
+```
+
+Run output (`visualization*/`, `vtr*/`, `_cache/`, figures, logs) is written next to each script
+and is ignored by git.

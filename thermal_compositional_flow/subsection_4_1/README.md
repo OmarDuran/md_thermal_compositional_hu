@@ -1,4 +1,7 @@
-# Subsection 4.2 — N-phase gravity segregation through barriers (HU-BM family)
+# Section 4.1 — N-phase gravity segregation through barriers (HU-BM family)
+
+The paper figures of this section are produced by `../run_subsection_4_1.sh`; see the repository
+README for the full list. This file documents the standalone solver and its drivers.
 
 Independent 2-D finite-volume reproduction of **Bosma et al. (2022, CMAME 388:114288),
 Example 6.3 / Fig. 5**: immiscible, incompressible, gravity-driven phase segregation in a

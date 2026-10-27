@@ -2,6 +2,7 @@
 *
 !thermal_compositional_flow/**/*.py
 !thermal_compositional_flow/**/*.md
+!thermal_compositional_flow/run_subsection_4_*.sh
 !thermal_compositional_flow/benchmark_figures_data/**
 
 # OBL tables (not in git, must be on disk).

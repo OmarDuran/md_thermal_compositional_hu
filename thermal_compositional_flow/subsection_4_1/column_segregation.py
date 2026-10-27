@@ -326,6 +326,9 @@ def make_density_comparison(results, case, out_dir, suffix="", perm_factor=1.0, 
 
 
 # --------------------------------------------------------------------------- main
+PERM_FACTOR = 10.0     # paper case: K = 10 x 1000 mD = 10 D
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ny", type=int, default=200,
@@ -333,8 +336,9 @@ def main():
     ap.add_argument("--mid-frac", type=float, default=1.0 / 3.0,
                     help="height fraction of the central beta band (default 1/3)")
     ap.add_argument("--t-end-days", type=float, default=60.0, help="run horizon [days] (default 60)")
-    ap.add_argument("--perm-factor", type=float, default=1.0,
-                    help="scale the rock permeability by this factor (default 1.0 = 1000 mD); "
+    ap.add_argument("--perm-factor", type=float, default=PERM_FACTOR,
+                    help="scale the 1000 mD base permeability by this factor (default 10 = 10 D, "
+                         "the paper case); "
                          "higher K speeds up the segregation")
     ap.add_argument("--dt-fixed-days", type=float, default=None,
                     help="use a FIXED time step of this many days (disables the adaptive dt and "
@@ -344,7 +348,7 @@ def main():
     args = ap.parse_args()
 
     H.K_ROCK = 1000.0 * H.MILLI_DARCY * args.perm_factor      # scaled rock permeability
-    suffix = "" if args.perm_factor == 1.0 else f"_kx{args.perm_factor:g}"
+    suffix = "" if args.perm_factor == PERM_FACTOR else f"_K{args.perm_factor:g}D"
     dt_note = ""
     if args.dt_fixed_days is not None:
         suffix += f"_dt{args.dt_fixed_days:g}"
