@@ -7,7 +7,8 @@
 #   checks    reduction-consistency table and monotonicity figure
 #   column    column segregation with a passive phase (standalone solver, HU vs PPU)
 #   barriers  barrier benchmark, fixed- and mixed-dimensional (standalone + PorePy)
-#   collect   copy the paper figures to paper_figures/
+#   collect   copy the paper figures to paper_figures/ and the PorePy snapshots
+#             behind them to benchmark_figures_data/porepy_vtks/
 #
 # --list prints the commands without running them. Runs are strictly sequential (one
 # process at a time). Finished runs are cached on disk and skipped by the barriers step;
@@ -23,11 +24,12 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}" OPENBLAS_NUM_THREADS="${OPENBLAS_
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}" MPLBACKEND="${MPLBACKEND:-Agg}"
 
 LIST=0
+LIST_FLAG=""
 STEPS=()
 for arg in "$@"; do
     case "$arg" in
-        --list) LIST=1 ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        --list) LIST=1; LIST_FLAG=--list ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         checks|column|barriers|collect) STEPS+=("$arg") ;;
         *) echo "unknown step: $arg" >&2; exit 2 ;;
     esac
@@ -71,6 +73,8 @@ step_barriers() {
 }
 
 step_collect() {
+    # PorePy snapshots behind the figures, to benchmark_figures_data/porepy_vtks/.
+    (cd "$HERE" && "$PYTHON" collect_porepy_vtks.py 4_1 $LIST_FLAG)
     local d=immiscible_multiphase_two_dimensional_flow
     collect figures/monotonicity.pdf "$d/monotonicity.pdf"
     collect tables/degenerate_equivalence.tex "$d/degenerate_equivalence.tex"

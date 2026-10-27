@@ -42,12 +42,15 @@ RUN apt-get update && \
 # dependency that the compositional materials import).
 RUN pip install --no-cache-dir pyvista seaborn meshio CoolProp chemicals
 
-# petsc4py enables the CPR linear solver (used by the CO2 case). PETSc compiles from
-# source (needs BLAS/LAPACK), so it gets its own layer.
+# petsc4py enables the CPR and direct PETSc linear solvers. PETSc compiles from source
+# with MPI, MUMPS (the direct solves of the barrier and CO2 cases) and hypre, so it gets
+# its own layer; the last command fails the build if MUMPS or hypre is missing.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libopenblas-dev && \
+    apt-get install -y --no-install-recommends libopenblas-dev gfortran mpich libmpich-dev cmake && \
     rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir petsc petsc4py
+    PETSC_CONFIGURE_OPTIONS="--download-mumps --download-scalapack --download-metis --download-parmetis --download-hypre" \
+        pip install --no-cache-dir petsc petsc4py && \
+    python -c "from petsc4py import PETSc; assert all(PETSc.Sys.hasExternalPackage(p) for p in ('mumps', 'hypre'))"
 
 ENV EXAMPLE_DIR=${POREPY_HOME}/src/porepy/examples/geothermal_flow
 

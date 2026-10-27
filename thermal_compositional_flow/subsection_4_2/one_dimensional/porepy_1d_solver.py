@@ -166,6 +166,7 @@ def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True) -> dic
                               specific_heat_capacity=880.0 * TO_MEGA)
     times_to_export = list(np.arange(0.0, tf, DT * EXPORT_EVERY)) + [tf]
     params = {
+        "folder_name": os.path.join(HERE, "visualization", f"fig5_{geometry_case}_{scheme}"),
         "ad_backend": "native",
         "fractional_flow": weighted_perm,
         "enable_buoyancy_effects": True,
@@ -289,6 +290,7 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
                               thermal_conductivity=2.0 * TO_MEGA, density=2700.0,
                               specific_heat_capacity=880.0 * TO_MEGA)
     params = {
+        "folder_name": os.path.join(HERE, "visualization", f"fig6_{column}"),
         "ad_backend": "native", "fractional_flow": False, "enable_buoyancy_effects": True,
         "buoyancy_upwinding": "hybrid", "material_constants": {"solid": solid},
         "time_manager": time_manager, "times_to_export": [tf],       # final snapshot only (save disk)

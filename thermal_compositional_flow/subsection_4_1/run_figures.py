@@ -43,7 +43,6 @@ NPHASES = [3, 4]
 STD_SCHEMES = ["ppu", "hu-mp"]           # CMP_SCHEMES for conservation/l2; ppu also feeds fixed_dim
 # Equi-dimensional (fractures as high-k bands) runs are made only for these phase counts, with PPU
 # (row 0 of the mixed-dim map) and HU-BM(mp) on the same mesh (like-for-like iteration count).
-# Same restriction as run_workflow.py (EQUIDIM_NPHASES / EQUIDIM_SCHEMES).
 EQUIDIM_NPHASES = [3]
 EQUIDIM_SCHEMES = ["ppu", "hu-mp"]
 FIG_DAYS = [0.0, 78.0, 571.0]

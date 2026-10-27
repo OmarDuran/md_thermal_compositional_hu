@@ -189,7 +189,7 @@ def _style_axes(ax, caption):
         ax.text(0.5, -0.16, caption, transform=ax.transAxes, ha="center", va="top", fontsize=10)
 
 
-SAVE_PDF = True     # also write a vector PDF next to each PNG (run_workflow toggles this via --pdf)
+SAVE_PDF = True     # also write a vector PDF next to each PNG
 
 
 def _save(fig, png_path):

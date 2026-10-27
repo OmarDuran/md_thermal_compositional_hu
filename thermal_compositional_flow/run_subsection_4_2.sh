@@ -10,7 +10,8 @@
 #   plume     two-dimensional geothermal plume, TPFA vs MPFA gravity (Section 4.2)
 #   co2       water-CO2 flow across the fracture network, three runs (Section 4.3)
 #   phz       water-CO2 PHZ diagrams of the OBL tables (Appendix B)
-#   collect   copy the paper figures to paper_figures/
+#   collect   copy the paper figures to paper_figures/ and the PorePy snapshots
+#             behind them to benchmark_figures_data/porepy_vtks/
 #
 # --list prints the commands without running them. Runs are strictly sequential (one
 # process at a time). The weis1d step reuses its _cache/ (delete it to recompute); the
@@ -26,10 +27,11 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}" OPENBLAS_NUM_THREADS="${OPENBLAS_
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}" MPLBACKEND="${MPLBACKEND:-Agg}"
 
 LIST=0
+LIST_FLAG=""
 STEPS=()
 for arg in "$@"; do
     case "$arg" in
-        --list) LIST=1 ;;
+        --list) LIST=1; LIST_FLAG=--list ;;
         -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
         weis1d|plume|co2|phz|collect) STEPS+=("$arg") ;;
         *) echo "unknown step: $arg" >&2; exit 2 ;;
@@ -80,6 +82,8 @@ step_phz() {
 }
 
 step_collect() {
+    # PorePy snapshots behind the figures, to benchmark_figures_data/porepy_vtks/.
+    (cd "$HERE" && "$PYTHON" collect_porepy_vtks.py 4_2 $LIST_FLAG)
     collect one_dimensional/figures/reproduce_weis_fig_5.pdf weis_one_dimensional_flow/reproduce_weis_fig_5.pdf
     collect one_dimensional/figures/reproduce_weis_fig_4.pdf weis_one_dimensional_flow/reproduce_weis_fig_4.pdf
     collect one_dimensional/figures/reproduce_weis_fig_6.pdf weis_one_dimensional_flow/reproduce_weis_fig_6.pdf

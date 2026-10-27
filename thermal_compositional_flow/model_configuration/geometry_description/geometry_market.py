@@ -472,8 +472,7 @@ class Figure8Geometry2D(Geometry):
 # 100-cell grid; values = inclusive barrier-cell column ranges. Columns NOT listed are the
 # openings in that layer. (Exact layout is in ref [39]; this is a faithful read of Fig. 5a.)
 #
-# SEVEN layers, re-extracted at pixel resolution from fig5_raw_a.png (see
-# benchmark_figures_data/wahu_fig5_digitized/fig5_barriers_and_saturations.py). Subregion
+# SEVEN layers, re-extracted at pixel resolution from Fig. 5(a). Subregion
 # (segment) counts per layer, bottom -> top: 3, 6, 4, 2, 5, 2, 5. (The prior read had only
 # 6 layers -- the depth-23 layer was missing -- and over-merged several openings.)
 _BARRIER_LAYERS_FIG = {

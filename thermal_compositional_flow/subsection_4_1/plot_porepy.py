@@ -337,7 +337,7 @@ def comparison_saturation_maps(n, days, out_dir):
     _save(fig, os.path.join(out_dir, f"comparison_saturation_maps_{n}_phases.png"), dpi=360)
 
 
-SAVE_PDF = True     # also write a vector PDF next to each PNG (run_workflow toggles this via --pdf)
+SAVE_PDF = True     # also write a vector PDF next to each PNG
 
 
 def _save(fig, png, dpi=180):

@@ -13,7 +13,7 @@ for both solvers (hamon numpy, porepy fixed-dim + interface) with finite-differe
 visualized concisely in ``figures/monotonicity.png``.
 
 Run standalone with ``python completion_checks.py`` (``--quick`` for a coarse pass); ``run_all_checks``
-is the entry point wired into ``run_workflow.py``.
+is the entry point.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-SAVE_PDF = False    # also write a vector PDF next to monotonicity.png (run_workflow toggles via --pdf)
+SAVE_PDF = False    # also write a vector PDF next to monotonicity.png (run_subsection_4_1.sh sets it)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
@@ -79,10 +79,12 @@ def check_reduction_consistency_porepy(quick: bool = False) -> dict:
             snap_days=(0.0, days), cell_size=cell, lagrange_linear_solver="scipy",
             folder_name=scratch, times_to_export=[], **flags)
         model = P.flow_model_class(params)(params)
+        # The two runs are compared cell by cell, so Newton must converge to machine precision:
+        # at tol=1e-6 the difference stops at ~1e-8 (the tolerance), at 1e-12 it is ~1e-15.
         solver_params = {
             "nl_convergence_criteria": {
                 "res_abs": pp.solvers.ResidualBasedAbsoluteCriterion(
-                    tol=1e-6, metric=pp.EquationBasedLebesgueMetric(model)),
+                    tol=1e-12, metric=pp.EquationBasedLebesgueMetric(model)),
                 "null_drift": P.NullSpaceDriftCriterion(model, tol=1e-2)},
             "nl_divergence_criteria": {
                 "max_iter": pp.solvers.MaxIterationsCriterion(max_iterations=25)},

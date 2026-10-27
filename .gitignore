@@ -225,10 +225,13 @@ __marimo__/
 # Run script output (simulation results, meshes, logs, figures, caches)
 visualization*/
 thermal_compositional_flow/paper_figures/
+thermal_compositional_flow/benchmark_figures_data/porepy_vtks/*
 *.msh
 *.geo_unrolled
 *.obltensor.npz
 
 # OBL tables: too large for git, see the Dockerfile
 *.vtr
-thermal_compositional_flow/benchmark_figures_data/wahu_fig5_digitized/fig5_reconstructed.png
+
+# Host folders mounted into the container
+results/
