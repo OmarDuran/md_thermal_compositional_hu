@@ -1,0 +1,39 @@
+% Degenerate-equivalence (reduction-consistency) table.
+% Requires \usepackage{booktabs} and \usepackage{siunitx}; phase-context macros from notation.tex.
+% Phase letters follow the phase context and Fig.~\ref{fig:immiscible_maps}: gamma = heavy,
+% beta = intermediate (split into beta-heavy + beta-light at N=4), alpha = light.
+% Numbers from completion_checks.check_reduction_consistency_{hamon,porepy} (quick config:
+% hamon 20^2 to 4 d; PorePy CF ~20^2 to 6 d). Machine-precision at any converging resolution --
+% the equivalence is structural, not discretisation-limited (values are O(10^3 eps_mach)).
+\begin{table}[t]
+  \centering
+  \caption{%
+    \textbf{Degenerate equivalence.} A four-phase system whose two intermediate members
+    $\phasealt_{\mathrm{h}}$, $\phasealt_{\mathrm{l}}$ are made identical---equal density
+    $\densphase{\phasealt} = \SI{1000}{\kilogram\per\cubic\metre}$, quadratic relative permeability,
+    and the initial intermediate band split equally---reduces \emph{exactly} to the three-phase
+    system whose intermediate phase carries the summed mobility of the two coalescing members,
+    $\mob{\phasealt}(s) = 2\,\densphase{\phasealt}\,k_r(s/2)/\mu$. The three densities of the reduced
+    system, $1500$, $1000$, and $500~\si{\kilogram\per\cubic\metre}$, are those of the original
+    three-phase setting of \textcite{Bosma2022} and \textcite{HamonTchelepi2016}: the degenerate
+    four-phase run reduces to a three-phase problem of that configuration to machine precision.
+    Entries are the maximum cell-wise saturation difference between the two runs at the final time;
+    both the standalone finite-volume solver and the PorePy compositional-flow model reproduce the
+    reduction to machine precision ($\varepsilon_{\mathrm{mach}} \approx \num{2.2e-16}$).}
+  \label{tab:degenerate-equivalence}
+  \begin{tabular}{@{}l c c c c@{}}
+    \toprule
+    & \multicolumn{4}{c@{}}{$\displaystyle
+        \max_{c\,\in\,\text{cells}} \bigl|\,s^{(4)}_c - s^{(3)}_c\,\bigr|$} \\
+    \cmidrule(lr){2-5}
+    Solver
+      & heavy, $\sat{\phase}$
+      & intermediate, $\sat{\phasealt_{\mathrm{h}}}\!+\!\sat{\phasealt_{\mathrm{l}}}$
+      & light, $\sat{\phaseext}$
+      & worst \\
+    \midrule
+    Standalone & $3.74\times10^{-13}$ & $3.75\times10^{-13}$ & $1.10\times10^{-13}$ & $3.75\times10^{-13}$ \\
+    PorePy     & $1.11\times10^{-15}$ & $1.11\times10^{-15}$ & $7.77\times10^{-16}$ & $1.11\times10^{-15}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}

@@ -1450,6 +1450,24 @@ class _FlowModelBody(
             vals = self.total_mass_mobility(subdomains) * vals
         return self.isotropic_second_order_tensor(subdomains, vals)
 
+    def normal_permeability(self, interfaces: list[pp.MortarGrid]) -> pp.ad.Operator:
+        """Rock permeability of the lower-dimensional neighbour, projected to the mortar.
+
+        This is the interface law the paper results were computed with. Upstream PorePy now
+        returns ``solid.normal_permeability`` (default 1 m^2) instead, which makes the
+        interfaces 1e12 times more conductive and stalls Newton. The fractional-flow branch
+        keeps the upstream mobility-weighted permeability."""
+        if pp.compositional_flow.is_fractional_flow(self):
+            return super().normal_permeability(interfaces)
+        subdomains = self.interfaces_to_subdomains(interfaces)
+        projection = pp.ad.MortarProjections(self.mdg, subdomains, interfaces, dim=1)
+        k = pp.wrap_as_dense_ad_array(
+            self.solid.permeability, grids=subdomains,
+            size=sum(sd.num_cells for sd in subdomains), name="absolute_permeability")
+        kn = projection.secondary_to_mortar_avg() @ k
+        kn.set_name("normal_permeability")
+        return kn
+
 
     def ic_values_pressure(self, sd: pp.Grid) -> np.ndarray:
         """Hydrostatic initial pressure in the solver's null-mean gauge, consistent with the

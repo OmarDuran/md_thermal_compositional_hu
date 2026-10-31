@@ -44,7 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAY = 86400.0
 LX = LY = 100.0
 PHI = 0.3                                          # = porepy_2d_solver porosity
-APERTURE = 1.0e-1                                  # = porepy_2d_solver FRACTURE_APERTURE
+APERTURE = 2.0e-1                                  # = porepy_2d_solver FRACTURE_APERTURE
 H_MIN, H_MAX = 1.0, 3.0                            # = porepy_2d_solver enthalpy bounds
 RHO_S = 2500.0                                     # = solid_constants density
 CP_S = 0.0035                                      # = solver C_P (caloric T = h/C_P AND rock c_p)
