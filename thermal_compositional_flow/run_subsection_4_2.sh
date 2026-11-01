@@ -25,6 +25,8 @@ OUT="${HERE}/paper_figures"
 PYTHON="${PYTHON:-python}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}" OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}" MPLBACKEND="${MPLBACKEND:-Agg}"
+# The numba cache of obl_sampler is written under the standalone module name, which PorePy runs must resolve.
+export PYTHONPATH="${HERE}${PYTHONPATH:+:${PYTHONPATH}}"
 
 LIST=0
 LIST_FLAG=""
