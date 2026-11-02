@@ -20,13 +20,8 @@ TAG = "fig5"
 CASES = ("horizontal", "vertical")
 YEARS = {"horizontal": "200", "vertical": "1000"}
 
-# PPU-Weis (Fig 5 ONLY): PPU with the Weis (2014) discretization -- properties AND upwind directions
-# lagged once per step (lag_upwind), and the interface gravity densities upwinded fully-upstream
-# (Eq.25, grav_upstream) rather than the consistent face average. Purple, so it stands out. It runs on
-# the Weis (2014) grid of N=200 cells, independent of the N used for the other schemes.
-PPU_WEIS_C = "#984EA3"
-PPU_WEIS_N = 200
-PPU_WEIS_LABEL = rf"PPU-Weis ($N={PPU_WEIS_N}$)"
+# openCSMP on the Weis (2014) grid of N=200 elements, next to the openCSMP reference (N=800).
+CSMP_COARSE_LABEL = r"openCSMP ($\Delta x = 10$ m)"
 
 # PorePy approximation overlay: the converged HU profile from porepy_1d_solver, cached as
 # _cache/fig5_porepy_{case}_hu_N800_l<level>.pkl. Drawn as black x markers over the weis-HU reference so the
@@ -71,11 +66,6 @@ def _load_porepy(case, scheme="hu", N=N):
 def compute(N=N, parallel=True, skip=frozenset()):
     out = C.sweep(TAG, list(CASES), m.FIG5, N, parallel=parallel,            # PPU / HU / HU-mwp (minus skipped)
                   schemes=C.active_schemes(skip))
-    if not C.is_skipped("ppu-weis", skip):
-        weis_N = min(PPU_WEIS_N, N)                      # exactly 200 for the figure; scaled in --quick
-        weis_tasks = [(("ppu_weis", case), "fig5weis", "ppu", case, m.FIG5, weis_N, True, True)
-                      for case in CASES]                                      # grav_upstream, lag_upwind
-        out.update(C.run_tasks("fig5-weis", weis_tasks, parallel=parallel))
     return out
 
 
@@ -98,12 +88,11 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
                   ref_p=C.csmp_ref(f"fig_5_{case}", "p"), ref_style=C.CSMP_STYLE)
         C.draw_s(ax_s, res, ref_s=C.csmp_ref(f"fig_5_{case}", "s_liq"), ref_style=C.CSMP_STYLE)
         extra_it = []
-        if not C.is_skipped("ppu-weis", skip) and ("ppu_weis", case) in out:
-            w = out[("ppu_weis", case)]                       # PPU-Weis 4th curve (Fig 5 only)
-            ax_tp.plot(*ps.to_plot_units(w, "T"), color=ps.PPU_WEIS["warm"], ls=ps.PPU_WEIS["dash"], lw=ps.CURVE_LW, zorder=3)
-            ax_p.plot(*ps.to_plot_units(w, "p"), color=ps.PPU_WEIS["cool"], ls=ps.PPU_WEIS["dash"], lw=ps.CURVE_LW, zorder=3)
-            ax_s.plot(*ps.to_plot_units(w, "s_liq"), color=ps.PPU_WEIS["warm"], ls=ps.PPU_WEIS["dash"], lw=ps.CURVE_LW, zorder=3)
-            extra_it.append((ps.PPU_WEIS["warm"], ps.PPU_WEIS["dash"], w["total_it"]))
+        for ax, fld, col in ((ax_tp, "T", ps.CSMP_COARSE["warm"]), (ax_p, "p", ps.CSMP_COARSE["cool"]),
+                             (ax_s, "s_liq", ps.CSMP_COARSE["warm"])):   # openCSMP N=200 (no Newton count)
+            ref = C.csmp_ref(f"fig_5_{case}_n200", fld)
+            if ref is not None:
+                ax.plot(*ref, color=col, ls=ps.CSMP_COARSE["dash"], lw=ps.CURVE_LW, zorder=3)
         pp_res = None if C.is_skipped("hu-porepy", skip) else _load_porepy(case)  # PorePy HU overlay
         if pp_res is not None:                                # warm T / cool p / warm s_liq, PorePy dash
             has_pp = True
@@ -134,8 +123,7 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
     # single bottom legend: scheme colours (names only) + the T/p and reference key. Per-case
     # iteration counts live in each panel's small legend (they differ by orientation).
     handles = C.scheme_handles(only=C.active_schemes(skip))
-    if not C.is_skipped("ppu-weis", skip):
-        handles.append(Line2D([0], [0], color=ps.PPU_WEIS["warm"], ls=ps.PPU_WEIS["dash"], lw=ps.CURVE_LW, label=PPU_WEIS_LABEL))
+    handles.append(Line2D([0], [0], color=ps.CSMP_COARSE["warm"], ls=ps.CSMP_COARSE["dash"], lw=ps.CURVE_LW, label=CSMP_COARSE_LABEL))
     if has_pp:                                          # key the overlay only when it was actually drawn
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW, label=POREPY_LABEL))
     handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"$T$ (warm, left)"),
@@ -150,7 +138,7 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Weis (2014) Fig 5 (two-phase pure water).")
     ap.add_argument("--skip-solver", default="", dest="skip",
-                    help="comma-separated solvers to skip: ppu, hu, hu-mwp, hu-porepy, ppu-weis")
+                    help="comma-separated solvers to skip: ppu, hu, hu-mwp, hu-porepy")
     args = ap.parse_args(argv)
     skip = C.parse_skip(args.skip)
     plot(compute(skip=skip), skip=skip)

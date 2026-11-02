@@ -75,7 +75,7 @@ _BARRIERS = [                                  # k = 1/100 x k_rock, ~perpendicu
 _N_COND = len(_CONDUCTIVE)                     # frac_num < _N_COND -> conductive, else barrier
 _COND_FACTOR = 100.0                           # conductive permeability / k_rock (tangential & normal)
 _BARR_FACTOR = 0.01                            # barrier permeability / k_rock (tangential & normal)
-_FRAC_APERTURE = 0.1                           # m, fracture aperture (tunable modelling parameter)
+_FRAC_APERTURE = 0.01                          # m, fracture aperture (tunable modelling parameter)
 
 _SCHEME_CONFIG = {
     "hu":    dict(fractional_flow=False, buoyancy_upwinding="hybrid"),

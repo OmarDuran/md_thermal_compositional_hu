@@ -2,14 +2,14 @@
 
 Each case is a 2 km column with fixed pressure, temperature and salinity at both ends and a
 linear initial pressure (condition 1). The openCSMP driver ``csmp_1d_column`` (built in the
-openCSMP repository) runs it with the CVFEM PHX scheme on 200 elements (dx = 10 m, as in the
-paper); this script writes the configuration and run files, runs the cases one after another
+openCSMP repository) runs it with the CVFEM PHX scheme on 800 elements (dx = 2.5 m, as the PorePy
+runs); this script writes the configuration and run files, runs the cases one after another
 and leaves the final profile as ``csmp_visualization/<case>/csmp_profile_1.csv``.
 
     python csmp_1d_solver.py                      # all ten cases
     python csmp_1d_solver.py fig_5_vertical       # selected cases
     python csmp_1d_solver.py --list
-    python csmp_1d_solver.py --elements 800 fig_5_vertical   # PorePy resolution, own folder
+    python csmp_1d_solver.py --elements 200 fig_5_vertical   # Weis (2014) resolution, own folder
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ OUT = HERE / "csmp_visualization"
 YEAR = 365.0 * 86400.0
 
 LENGTH = 2000.0           # [m]
-ELEMENTS = 200            # dx = 10 m (Weis et al. 2014)
+ELEMENTS = 800            # dx = 2.5 m, as the PorePy runs (Weis et al. 2014 use 200)
 DT_INITIAL = 0.01         # [yr]
 DT_MAX = 1.0              # [yr], the paper's largest step
 DT_MIN = 1.0e-8           # [yr], failure guard
@@ -179,7 +179,7 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="list the cases and stop")
     ap.add_argument("--csmp-exe", help="path to csmp_1d_column")
     ap.add_argument("--elements", type=int, default=ELEMENTS,
-                    help=f"elements over the 2 km column (default {ELEMENTS}; PorePy uses 800)")
+                    help=f"elements over the 2 km column (default {ELEMENTS}; Weis et al. 2014 use 200)")
     ap.add_argument("--tables-dir", help="openCSMP lookup-table cache (default: next to the driver)")
     args = ap.parse_args()
     if args.list:

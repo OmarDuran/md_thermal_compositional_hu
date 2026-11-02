@@ -32,10 +32,10 @@ SCHEMES = {
                    warm="#D6352A", cool="#2666AE", dash=(0, (6.5, 1.6, 1.2, 1.6))),
 }
 # Overlay curves (not weis schemes): same warm/cool idiom, own distinct dash. PorePy takes the
-# darkest shade (the reference dark red/blue sits just beyond it); the fig-5 PPU-Weis curve reuses
-# PPU's shade -- it IS PPU under Weis's discretisation -- and is told apart by its dash alone.
+# darkest shade (the reference dark red/blue sits just beyond it); the fig-5 openCSMP N=200 curve
+# reuses PPU's shade and is told apart by its dash alone.
 POREPY = dict(label=r"HU-PorePy", warm="#A81D2E", cool="#143C86", dash=(0, (3.0, 2.6)))
-PPU_WEIS = dict(warm=SCHEMES["ppu"]["warm"], cool=SCHEMES["ppu"]["cool"], dash=(0, (7, 1.5, 1.5, 1.5)))
+CSMP_COARSE = dict(warm=SCHEMES["ppu"]["warm"], cool=SCHEMES["ppu"]["cool"], dash=(0, (7, 1.5, 1.5, 1.5)))
 CURVE_LW = 2.0        # scheme / overlay line width (the reference band stays thin, ~1.0)
 
 # Gravity-term density treatment (fig weis_verification) -> run kwarg + line style.

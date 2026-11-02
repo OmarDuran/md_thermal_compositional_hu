@@ -63,7 +63,7 @@ _CSMP_COL = {"T": ("temperature_C", 1.0), "p": ("pressure_Pa", 1.0e-6),
 
 def csmp_ref(case, field):
     """openCSMP reference ``(distance_km, value)`` from csmp_1d_solver.py (``case`` as in its CASES,
-    e.g. ``fig_4_hp_vertical``), or ``None`` if that case has not been run."""
+    e.g. ``fig_4_hp_vertical``; ``_n200`` for the 200-element runs), or ``None`` if not run."""
     path = os.path.join(CSMP_DIR, case, "csmp_profile_1.csv")
     if not os.path.exists(path):
         print(f"openCSMP reference missing: {path}")
@@ -181,8 +181,7 @@ def scheme_totals(panels):
 
 def parse_skip(spec):
     """Comma/space-separated solver names -> normalized skip set. Recognised names: the ps.SCHEMES keys
-    (``ppu``, ``hu``, ``hu-mwp``), plus ``hu-porepy`` (the PorePy overlay) and ``ppu-weis`` (the Fig-5
-    reference curve). Hyphen/underscore- and case-insensitive."""
+    (``ppu``, ``hu``, ``hu-mwp``), plus ``hu-porepy`` (the PorePy overlay). Hyphen/underscore- and case-insensitive."""
     import re
     return {t.strip().lower().replace("_", "-") for t in re.split(r"[,\s]+", spec or "") if t.strip()}
 
@@ -211,8 +210,8 @@ def iteration_legend(ax, results, loc="lower right", fontsize=6.0, title=r"\text
     """Small in-panel key with this CASE's Newton-iteration count per scheme: just the coloured line
     and the number (the scheme names live in the shared bottom legend). Counts differ by orientation
     / pressure level, so they belong to the panel. ``title`` doubles as a caption (Fig 4 puts its
-    pressure level + time there). ``extra`` = optional [(colour, count), ...] appended (Fig 5's
-    PPU-Weis curve)."""
+    pressure level + time there). ``extra`` = optional [(colour, dash, count), ...] appended (the PorePy
+    overlay)."""
     from matplotlib.lines import Line2D
     schemes = [sk for sk in ps.SCHEMES if sk in results]
     h = [Line2D([0], [0], color=ps.SCHEMES[sk]["warm"], ls=ps.SCHEMES[sk]["dash"], lw=2.4) for sk in schemes]
