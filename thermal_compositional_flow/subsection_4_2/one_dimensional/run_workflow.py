@@ -194,7 +194,7 @@ def main(argv=None):
         F4.AUTORUN_POREPY = F5.AUTORUN_POREPY = F6.AUTORUN_POREPY = False
     # Quick mode forces serial: the sandbox redirection below patches the figure modules' CACHE_DIR
     # in THIS process, but a spawn worker pool re-imports them fresh and would revert to the real
-    # _cache/. Serial keeps every run in-process, so the sandbox holds.
+    # _cache/. The serial path hands CACHE_DIR to its worker, so the sandbox holds.
     parallel = not (args.serial or args.quick)
     do_multiphase = not args.single_phase_only
     do_single = args.single_phase_only or not args.skip_single_phase

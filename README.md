@@ -228,8 +228,9 @@ Weis et al. (2014) benchmarks:
 
 Results are cached in `one_dimensional/_cache/`, and existing cache files are reused.
 
-`--serial` keeps the 1-D sweeps in one process. A parallel pool would load the tables once per
-worker. A parallel run from a cold cache took about 5 h.
+`--serial` runs the 1-D sweeps one at a time, each in a fresh process, because a run takes about
+6 GB and consecutive runs in one process pass 15 GB. A parallel pool would load the tables once
+per worker. A parallel run from a cold cache took about 5 h.
 
 ### `plume`
 

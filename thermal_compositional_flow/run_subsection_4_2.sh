@@ -62,7 +62,8 @@ collect() {
 }
 
 step_weis1d() {
-    # --serial keeps the 1-D sweeps in one process (a parallel pool loads the tables per worker).
+    # --serial runs the 1-D sweeps one at a time, each in a fresh process (a parallel pool loads
+    # the tables per worker at once).
     run one_dimensional "$PYTHON" run_workflow.py --serial --pdf
 }
 

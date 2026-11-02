@@ -52,7 +52,8 @@ def _load_porepy(case, scheme="hu", N=N):
             if N == pp1d.N_CELLS:
                 print(f"[fig5] porepy overlay cache missing for {case}/{scheme} -- running "
                       f"porepy_1d_solver.run_case (heavy: PorePy solve) ...", flush=True)
-                pp1d.run_case(case, weighted_perm=(scheme == "hu_mwp"))   # writes the same pickle path
+                C.run_in_own_process("import porepy_1d_solver as P; P.run_case("
+                                     f"{case!r}, weighted_perm={scheme == 'hu_mwp'})")  # writes the same pickle path
             else:
                 print(f"[fig5] porepy overlay skipped for {case}/{scheme}: fig N={N} "
                       f"!= porepy_1d_solver N={pp1d.N_CELLS}", flush=True)

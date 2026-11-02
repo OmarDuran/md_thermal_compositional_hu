@@ -42,10 +42,10 @@ def _load_porepy(column):
     path = os.path.join(C.CACHE_DIR, f"fig6_porepy_{column}_hu_N800_l{m.TABLE_LEVEL}.pkl")
     if not os.path.exists(path) and AUTORUN_POREPY:
         try:
-            import porepy_1d_solver as pp1d                 # lazy: imports porepy only on a cold cache
             print(f"[fig6] porepy overlay cache missing for {column} -- running "
                   f"porepy_1d_solver.run_fig6_case (heavy: 2000 yr PorePy solve) ...", flush=True)
-            pp1d.run_fig6_case(column)                      # writes the same pickle path
+            C.run_in_own_process("import porepy_1d_solver as P; "
+                                 f"P.run_fig6_case({column!r})")  # writes the same pickle path
         except Exception as exc:                            # never let an overlay break the figure
             print(f"[fig6] porepy overlay auto-run failed for {column}: {exc}", flush=True)
     if not os.path.exists(path):

@@ -59,10 +59,10 @@ def _load_porepy(lvl, orient):
     path = os.path.join(C.CACHE_DIR, f"fig4_porepy_{case_name}_{orient}_l{m.TABLE_LEVEL}.pkl")
     if not os.path.exists(path) and AUTORUN_POREPY:
         try:
-            import single_phase_porepy_1d_solver as sp1d    # lazy: imports porepy only on a cold cache
             print(f"[fig4] porepy overlay cache missing for {case_name}/{orient} -- running "
                   f"single_phase_porepy_1d_solver.run_case (heavy: PorePy solve) ...", flush=True)
-            sp1d.run_case(case_name, orient)                # writes the same pickle path
+            C.run_in_own_process("import single_phase_porepy_1d_solver as S; "
+                                 f"S.run_case({case_name!r}, {orient!r})")  # writes the same pickle path
         except Exception as exc:                            # never let an overlay break the figure
             print(f"[fig4] porepy overlay auto-run failed for {case_name}/{orient}: {exc}", flush=True)
     if not os.path.exists(path):
@@ -75,7 +75,8 @@ def _load_porepy(lvl, orient):
 
 
 def compute(N=N, parallel=True, skip=frozenset()):
-    m.prebuild_table_caches()
+    if parallel:
+        m.prebuild_table_caches()
     tasks = []
     for lvl in LEVELS:
         for orient in ORIENTS:

@@ -14,6 +14,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")   # deadlocks with multi-thre
 os.environ.setdefault("MKL_NUM_THREADS", "1")        # (uncached) compute -- see run_workflow.py.
 
 import pickle
+import subprocess
 import sys
 
 import numpy as np
@@ -77,9 +78,22 @@ def _run_one(args):
     return rkey, keep, False
 
 
+def _set_cache_dir(path):
+    """Pool initializer: carry a redirected ``CACHE_DIR`` (the --quick sandbox) into a spawned worker."""
+    global CACHE_DIR
+    CACHE_DIR = path
+
+
+def run_in_own_process(code):
+    """Run a PorePy overlay in its own process, so its memory is released when it ends."""
+    subprocess.run([sys.executable, "-c", code], cwd=m.HERE, check=True)
+
+
 def run_tasks(label, tasks, parallel=True):
     """Run a list of ``_run_one`` task tuples, caching each. Returns ``{(scheme_key, case): result}``.
     A fresh run parallelises over a spawn Pool (BLAS threads pinned above); cached runs are instant.
+    A serial run gives each uncached task a fresh process, because consecutive ``run_brine`` calls in
+    one process build up past 15 GiB while a single run stays near 6 GiB.
     Tasks may carry per-task BC presets (e.g. Fig 4's per-pressure-level, per-orientation times)."""
     out = {}
 
@@ -96,8 +110,13 @@ def run_tasks(label, tasks, parallel=True):
             for key, res, cached in pool.imap_unordered(_run_one, tasks):
                 _report(key, res, cached)
     else:
-        for t in tasks:
-            _report(*_run_one(t))
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(1, mp_context=mp.get_context("spawn"), max_tasks_per_child=1,
+                                 initializer=_set_cache_dir, initargs=(CACHE_DIR,)) as pool:
+            for t in tasks:
+                cached = os.path.exists(_run_path(t[1], t[2], t[3], t[5]))
+                _report(*(_run_one(t) if cached else pool.submit(_run_one, t).result()))
     return out
 
 
@@ -105,7 +124,8 @@ def sweep(tag, cases, bc, N, schemes=None, grav_upstream=False, lag_upwind=False
     """Run PPU/HU/HU-mwp over ``cases`` with a SHARED BC preset ``bc`` (Fig 5/6), sampling the single
     graded OBL. Fig 4, whose BC and time vary per panel, builds its own tasks and calls
     :func:`run_tasks` directly."""
-    m.prebuild_table_caches()                                   # graded tensor-cache warm-up
+    if parallel:
+        m.prebuild_table_caches()                               # graded tensor-cache warm-up
     schemes = list(ps.SCHEMES) if schemes is None else list(schemes)
     tasks = [((sk, case), tag, sk, case, bc, N, grav_upstream, lag_upwind)
              for case in cases for sk in schemes]
