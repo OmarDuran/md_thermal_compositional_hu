@@ -235,3 +235,6 @@ thermal_compositional_flow/benchmark_figures_data/porepy_vtks/*
 
 # Host folders mounted into the container
 results/
+
+# openCSMP lookup tables (large, built by openCSMP)
+opencsmp/tables/

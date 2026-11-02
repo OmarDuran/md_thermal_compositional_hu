@@ -1,0 +1,1253 @@
+Changes to openCSMP (https://github.com/openCSMP/openCSMP) at commit
+a164273282965a3afa34ef6995f45a22ebeebfc7, used by the reproduction image.
+
+SPDX-FileCopyrightText: © 2026 Omar Duran
+SPDX-License-Identifier: LGPL-3.0-only
+
+Modified 2026-11-02 by Omar Duran: adds the Weis et al. (2014) drivers csmp_1d_column
+(1D condition-1 columns) and csmp_2d_plume (2D heat-flux plume), their CMake targets,
+linear-solver tolerance setters, and an opt-in halite-free relative permeability.
+openCSMP is licensed under LGPL-3.0-only (IAPS water EOS: LGPL-2.0-only); see LICENSES/.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7e3ffda..192d883 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,4 +1,7 @@
+ # SPDX-FileCopyrightText: © 2026 The openCSMP project
++# SPDX-FileCopyrightText: © 2026 Omar Duran
++#
++# Modified 2026-11-02 by Omar Duran: csmp_2d_plume and csmp_1d_column driver targets; CGNS imported targets; PETSc absolute link paths.
+ #
+ # SPDX-License-Identifier: LGPL-3.0-only
+ 
+@@ -299,8 +302,20 @@ endif()
+ set( CGNS_FOUND_USABLE FALSE )
+ 
+ # 1. Try find_package first
++# CGNS' exported targets link against the 'hdf5-shared' target, which only
++# exists once HDF5's own CMake config package has been loaded.
++find_package( HDF5 CONFIG QUIET )
+ find_package( CGNS QUIET )
+ if ( CGNS_FOUND )
++    # Modern CGNS config packages (e.g. Homebrew) export imported targets instead
++    # of CGNS_LIBRARIES / CGNS_INCLUDE_DIRS; the target carries its include dirs.
++    if ( NOT CGNS_LIBRARIES )
++        if ( TARGET CGNS::cgns_shared )
++            set( CGNS_LIBRARIES CGNS::cgns_shared )
++        elseif ( TARGET CGNS::cgns_static )
++            set( CGNS_LIBRARIES CGNS::cgns_static )
++        endif()
++    endif()
+     message( STATUS "CGNS found via find_package: ${CGNS_LIBRARIES}" )
+     set( CGNS_FOUND_USABLE TRUE )
+ 
+@@ -583,7 +598,9 @@ target_include_directories(openCSMP PUBLIC ${rapidxml_SOURCE_DIR})
+ # PETSc (optional)
+ if(CSMP_WITH_PETSC_SOLVER)
+     target_include_directories(openCSMP PUBLIC ${PETSC_INCLUDE_DIRS})
+-    target_link_libraries(openCSMP PUBLIC ${PETSC_LIBRARIES})
++    # PETSC_LINK_LIBRARIES holds absolute paths; PETSC_LIBRARIES is bare names
++    # without the -L search dir, which fails for non-system prefixes (Homebrew).
++    target_link_libraries(openCSMP PUBLIC ${PETSC_LINK_LIBRARIES})
+     # PETSC_CFLAGS_OTHER contains raw -DFOO flags — must use compile_options not compile_definitions
+     target_compile_options(openCSMP PRIVATE ${PETSC_CFLAGS_OTHER})
+     target_compile_definitions(openCSMP PUBLIC CSMP_WITH_PETSC_SOLVER)
+@@ -817,6 +834,52 @@ if(BUILD_EXAMPLES)
+ endif()
+ 
+ 
++# ===============================================================================================
++# Driver Executable: csmp_2d_plume
++#   Weis et al. (2014) Fig. 8 heat-flux plume with optional split-boundary fault network;
++#   run through csmp_2d_solver.py (next to porepy_2d_solver.py in the PorePy repository).
++# ===============================================================================================
++if(BUILD_EXAMPLES)
++    add_executable(csmp_2d_plume
++            "${CVFEM_HYDROTHERMAL_ROOT}/drivers/csmp_2d_plume.cpp"
++            ${CVFEM_HSS_LIB_SOURCES}
++    )
++    target_include_directories(csmp_2d_plume PRIVATE
++            ${CSMP_CONSUMER_INCLUDE_DIRS}
++            "${CMAKE_CURRENT_SOURCE_DIR}"
++            "${CVFEM_HYDROTHERMAL_ROOT}/includes/hydrothermal_system_simulator"
++    )
++    if(CVFEM_HSS_SOURCES OR CVFEM_HSS_HEADERS)
++        get_unique_directories(CSMP_2D_PLUME_HSS_DIRS "${CVFEM_HSS_SOURCES};${CVFEM_HSS_HEADERS}")
++        target_include_directories(csmp_2d_plume PRIVATE ${CSMP_2D_PLUME_HSS_DIRS})
++    endif()
++    target_link_libraries(csmp_2d_plume PRIVATE openCSMP)
++endif()
++
++
++# ===============================================================================================
++# Driver Executable: csmp_1d_column
++#   Weis et al. (2014) Figs. 4-6 one-dimensional condition-1 benchmarks;
++#   run through csmp_1d_solver.py (next to the PorePy 1D solvers).
++# ===============================================================================================
++if(BUILD_EXAMPLES)
++    add_executable(csmp_1d_column
++            "${CVFEM_HYDROTHERMAL_ROOT}/drivers/csmp_1d_column.cpp"
++            ${CVFEM_HSS_LIB_SOURCES}
++    )
++    target_include_directories(csmp_1d_column PRIVATE
++            ${CSMP_CONSUMER_INCLUDE_DIRS}
++            "${CMAKE_CURRENT_SOURCE_DIR}"
++            "${CVFEM_HYDROTHERMAL_ROOT}/includes/hydrothermal_system_simulator"
++    )
++    if(CVFEM_HSS_SOURCES OR CVFEM_HSS_HEADERS)
++        get_unique_directories(CSMP_1D_COLUMN_HSS_DIRS "${CVFEM_HSS_SOURCES};${CVFEM_HSS_HEADERS}")
++        target_include_directories(csmp_1d_column PRIVATE ${CSMP_1D_COLUMN_HSS_DIRS})
++    endif()
++    target_link_libraries(csmp_1d_column PRIVATE openCSMP)
++endif()
++
++
+ # ===============================================================================================
+ # Test Executable: openCSMP-tests
+ #
+diff --git a/hydrothermal_system_modelling/includes/cvfe_hydrothermal/CVFEM_PHX_Scheme.h b/hydrothermal_system_modelling/includes/cvfe_hydrothermal/CVFEM_PHX_Scheme.h
+index 591c111..fc775a9 100644
+--- a/hydrothermal_system_modelling/includes/cvfe_hydrothermal/CVFEM_PHX_Scheme.h
++++ b/hydrothermal_system_modelling/includes/cvfe_hydrothermal/CVFEM_PHX_Scheme.h
+@@ -1,4 +1,7 @@
+ // SPDX-FileCopyrightText: © 2026 The openCSMP project
++// SPDX-FileCopyrightText: © 2026 Omar Duran
++//
++// Modified 2026-11-02 by Omar Duran: linear-solver tolerance setters; SetRelativePermeabilityIgnoresHalite.
+ //
+ // SPDX-License-Identifier: LGPL-3.0-only
+ 
+@@ -58,6 +61,8 @@ public:
+     ~CVFEM_PHX_Scheme();
+ 
+     void SetLargestTimeStep(double timestep);   // modifying maximum size of time step at the start of the simulation
++    void SetLinearSolverRelativeTolerance(double rtol); // pressure and temperature solves (default 1e-12), applied from the next solve
++    void SetLinearSolverMaximumIterations(int max_iterations); // pressure and temperature solves (PETSc default here 1000)
+     void SetCutLogLabel(const std::string& label) { dt_cut_log_label_ = label; } // names the dt-cut CSV (public: called from the driver)
+     void ResetLargestTimeStep(double timestep);  // modifying in again later during the simulation
+     void ChangeTimeStepTo(double timestep);   // adjusting timestep
+@@ -72,6 +77,9 @@ public:
+     // switch on open top, specifying salinity of inflowing fluid
+     void OpenBoundaries(double wt_top);
+ 
++    // linear kr on sl/(1-sh), unscaled by (1-sh) (Weis et al. 2014, Fig. 6)
++    void SetRelativePermeabilityIgnoresHalite(bool b) { equilibrator_properties.SetRelativePermeabilityIgnoresHalite(b); }
++
+     void SetBrickWallLimiterTo(bool limit);   // switch brick wall limiter for fluid pressure on or off
+ 
+     void AddAdvectionVariable(const char *balanced_variable,
+diff --git a/hydrothermal_system_modelling/includes/cvfe_hydrothermal/NaClH2OPropertiesVisitorPHX.h b/hydrothermal_system_modelling/includes/cvfe_hydrothermal/NaClH2OPropertiesVisitorPHX.h
+index f4ae142..dbfaede 100644
+--- a/hydrothermal_system_modelling/includes/cvfe_hydrothermal/NaClH2OPropertiesVisitorPHX.h
++++ b/hydrothermal_system_modelling/includes/cvfe_hydrothermal/NaClH2OPropertiesVisitorPHX.h
+@@ -1,4 +1,7 @@
+ // SPDX-FileCopyrightText: © 2026 The openCSMP project
++// SPDX-FileCopyrightText: © 2026 Omar Duran
++//
++// Modified 2026-11-02 by Omar Duran: halite-free linear relative permeability option (kr_ignores_halite).
+ //
+ // SPDX-License-Identifier: LGPL-3.0-only
+ 
+@@ -65,6 +68,10 @@ public:
+     // (res_sl, res_sv, res_sa) already defined as member variables.
+     void SetBrooksCoreyKr( bool b, double lambda = 2. );
+ 
++    // Linear kr on the fluid-normalised liquid saturation sl/(1-sh), unscaled by (1-sh):
++    // halite then acts only through the absolute permeability (Weis et al. 2014, Fig. 6).
++    void SetRelativePermeabilityIgnoresHalite( bool b ) { kr_ignores_halite = b; }
++
+     // ── Physics options ───────────────────────────────────────────────────────
+     void SetThermodynamicDensityInGravityTermTo( bool b );
+     void SetThermodynamicDensityInCompressibilityTermTo( bool b );
+@@ -164,6 +171,7 @@ private:
+     //
+     // Set via SetBrooksCoreyKr(true, lambda).
+     bool   use_brooks_corey_kr                        = false;  // opt-in
++    bool   kr_ignores_halite                          = false;  // opt-in, linear only
+     double lambda_bc                                  = 2.;    // pore-size index default value
+ 
+     // ── Boundary inflow reference values ──────────────────────────────────
+@@ -536,6 +544,8 @@ inline double NaClH2OPropertiesVisitorPHX<dim>::RelativePermeabilityLiquid(
+     // =========================================================================
+     const double sat_total = sat_liquid + sat_vapor + sat_air;
+     if (sat_total <= 0.) return 0.;
++    if (kr_ignores_halite)
++        return std::max(0., std::min(1., (sat_liquid / sat_total - res_sl) / (1. - res_sl - res_sv - res_sa)));
+ 
+     const double my_res_sl = res_sl * sat_total;
+     const double my_res_sv = res_sv * sat_total;
+@@ -606,6 +616,8 @@ inline double NaClH2OPropertiesVisitorPHX<dim>::RelativePermeabilityGas(
+     // =========================================================================
+     const double sat_total = sat_liquid + sat_vapor + sat_air;
+     if (sat_total <= 0.) return 0.;
++    if (kr_ignores_halite)
++        return 1. - std::max(0., std::min(1., (sat_liquid / sat_total - res_sl) / (1. - res_sl - res_sv - res_sa)));
+ 
+     const double my_res_sl = res_sl * sat_total;
+     const double my_res_sv = res_sv * sat_total;
+diff --git a/hydrothermal_system_modelling/modules/cvfe_hydrothermal/CVFEM_PHX_Scheme.cpp b/hydrothermal_system_modelling/modules/cvfe_hydrothermal/CVFEM_PHX_Scheme.cpp
+index f870b07..2c64668 100644
+--- a/hydrothermal_system_modelling/modules/cvfe_hydrothermal/CVFEM_PHX_Scheme.cpp
++++ b/hydrothermal_system_modelling/modules/cvfe_hydrothermal/CVFEM_PHX_Scheme.cpp
+@@ -1,4 +1,7 @@
+ // SPDX-FileCopyrightText: © 2026 The openCSMP project
++// SPDX-FileCopyrightText: © 2026 Omar Duran
++//
++// Modified 2026-11-02 by Omar Duran: linear-solver tolerance setters.
+ //
+ // SPDX-License-Identifier: LGPL-3.0-only
+ 
+@@ -1578,6 +1581,39 @@ void CVFEM_PHX_Scheme<dim>::
+         attempt_to_survive_fluid_properties_error_);
+ }
+ 
++/** relative stopping tolerance of the pressure and temperature linear solves; the
++    solvers read their settings at every solve, so this takes effect immediately */
++template <uint32_t dim>
++void CVFEM_PHX_Scheme<dim>::SetLinearSolverRelativeTolerance(
++    double rtol)
++{
++    (void)rtol; // unused if no configurable backend is compiled in
++    for (SolverBundle* bundle : {&P_bundle, &T_bundle})
++    {
++#ifdef CSMP_WITH_SAMG_SOLVER
++        if (bundle->Kind() == SolverKind::SAMG)
++            bundle->SAMGSettings().Set_eps(rtol);
++#endif
++#if defined(CSMP_WITH_PETSC_SOLVER)
++        if (bundle->Kind() == SolverKind::PETSc)
++            bundle->PETScSettings().SetRelativeTolerance(rtol);
++#endif
++    }
++}
++
++/** Krylov iteration cap of the pressure and temperature linear solves (PETSc only) */
++template <uint32_t dim>
++void CVFEM_PHX_Scheme<dim>::SetLinearSolverMaximumIterations(
++    int max_iterations)
++{
++    (void)max_iterations; // unused if PETSc is not compiled in
++#if defined(CSMP_WITH_PETSC_SOLVER)
++    for (SolverBundle* bundle : {&P_bundle, &T_bundle})
++        if (bundle->Kind() == SolverKind::PETSc)
++            bundle->PETScSettings().SetMaximumIterations(max_iterations);
++#endif
++}
++
+ // BenoitLC add
+ template <uint32_t dim>
+ void CVFEM_PHX_Scheme<dim>::SetRockHeatCapacity(
+diff --git a/hydrothermal_system_modelling/drivers/csmp_1d_column.cpp b/hydrothermal_system_modelling/drivers/csmp_1d_column.cpp
+new file mode 100644
+index 0000000..27542b4
+--- /dev/null
++++ b/hydrothermal_system_modelling/drivers/csmp_1d_column.cpp
+@@ -0,0 +1,459 @@
++// SPDX-FileCopyrightText: © 2026 Omar Duran
++//
++// SPDX-License-Identifier: LGPL-3.0-only
++
++/** @file csmp_1d_column.cpp
++ *  @brief openCSMP driver behind csmp_1d_solver.py: the one-dimensional condition-1 benchmarks
++ *         of Weis et al. (2014, Geofluids 14, 347-371), Figs. 4-6. A 2 km column with fixed
++ *         pressure, temperature and salinity at both ends; x = 0 is the inflow end, and the
++ *         bottom when gravity is on.
++ *
++ *  Usage:  csmp_1d_column <run-file>
++ *
++ *  The run file is written by csmp_1d_solver.py, one "key value..." entry per line:
++ *    config <basename>               openCSMP <basename>-configuration.txt (block 4 sets the ends)
++ *    output <path prefix>            profiles <prefix>_profile_<index>.csv, VTU <prefix>_<index>.vtu
++ *    length <m>, elements <n>        uniform line mesh
++ *    snap_years <t0> <t1> ...        export instants [yr]; t0 = 0
++ *    dt_initial|dt_max|dt_min <yr>   time stepping (the scheme also limits dt by CFL and mass)
++ *    linear_rtol <r>, linear_maxit <n>
++ *    cfl_scaling <c>
++ *    rock_permeability <m2>
++ *    target_halite <s>               optional: per-node bulk salinity giving halite saturation s
++ *    halite_permeability 0|1         optional: Weis eq. 28, k = k0 (1 - S_h)^2, and halite-free
++ *                                    linear relative permeability (Weis 2014, Fig. 6 setup)
++ *
++ *  Numerics: the sequential CVFEM PHX scheme of Weis et al. (2014), as in csmp_2d_plume.
++ */
++
++#include "Model1D.h"
++#include "ComputationalSettings.h"
++#include "InputDataManager.h"
++#include "ModelBuilder.h"
++#include "ModelTime.h"
++
++#include "CVFEM_PHX_Scheme.h"
++#include "CVFEM_SolverChoice.h"
++#include "PermeabilityVisitor.h"
++#include "PoreVolumeVisitor.h"
++#include "VTU_Interface.h"
++
++#include <algorithm>
++#include <chrono>
++#include <cmath>
++#include <cstdio>
++#include <fstream>
++#include <iomanip>
++#include <iostream>
++#include <memory>
++#include <sstream>
++#include <string>
++#include <vector>
++#include <unistd.h>
++
++#ifdef CSMP_WITH_PETSC_SOLVER
++#include <petscsys.h>
++#endif
++
++using namespace std;
++using namespace csmp;
++
++namespace {
++
++constexpr uint32_t dim = 1U;
++constexpr double year = 365.0 * 86400.0; // [s], as in the PorePy 1D solvers
++
++struct RunParameters {
++    string config, output;
++    double length = 2000.;
++    size_t elements = 200;
++    vector<double> snap_years;
++    double dt_initial = 0.01, dt_max = 1., dt_min = 1.e-8;
++    double linear_rtol = 1.e-10;
++    int    linear_maxit = 1000;
++    double cfl_scaling = 0.1;
++    double rock_permeability = 1.e-15;
++    double target_halite = -1.;
++    bool   halite_permeability = false;
++};
++
++RunParameters ReadRunFile(const string& path)
++{
++    ifstream in(path);
++    if (!in)
++        throw runtime_error("cannot open run file " + path);
++    RunParameters p;
++    string line;
++    while (getline(in, line)) {
++        if (line.empty() || line[0] == '#')
++            continue;
++        istringstream is(line);
++        string key;
++        is >> key;
++        if      (key == "config")              is >> p.config;
++        else if (key == "output")              is >> p.output;
++        else if (key == "length")              is >> p.length;
++        else if (key == "elements")            is >> p.elements;
++        else if (key == "snap_years")          { double y; while (is >> y) p.snap_years.push_back(y); if (is.eof()) is.clear(); }
++        else if (key == "dt_initial")          is >> p.dt_initial;
++        else if (key == "dt_max")              is >> p.dt_max;
++        else if (key == "dt_min")              is >> p.dt_min;
++        else if (key == "linear_rtol")         is >> p.linear_rtol;
++        else if (key == "linear_maxit")        is >> p.linear_maxit;
++        else if (key == "cfl_scaling")         is >> p.cfl_scaling;
++        else if (key == "rock_permeability")   is >> p.rock_permeability;
++        else if (key == "target_halite")       is >> p.target_halite;
++        else if (key == "halite_permeability") { int v; is >> v; p.halite_permeability = v != 0; }
++        else
++            throw runtime_error("unknown run-file key '" + key + "'");
++        if (is.fail())
++            throw runtime_error("bad value in run-file line: " + line);
++    }
++    if (p.config.empty() || p.output.empty() || p.snap_years.size() < 2 || p.snap_years.front() != 0.)
++        throw runtime_error("run file needs config, output and snap_years starting at 0");
++    return p;
++}
++
++string FormatDuration(double seconds)
++{
++    const long s = lround(seconds);
++    ostringstream oss;
++    if (s >= 3600) oss << s / 3600 << "h" << setw(2) << setfill('0') << (s % 3600) / 60 << "m";
++    else if (s >= 60) oss << s / 60 << "m" << setw(2) << setfill('0') << s % 60 << "s";
++    else oss << s << "s";
++    return oss.str();
++}
++
++void PrintProgress(double years, double total_years, double dt_years, size_t steps, double wall)
++{
++    const double f = clamp(years / total_years, 0.0, 1.0);
++    const int filled = static_cast<int>(f * 30);
++    cerr << "csmp_1d_column [" << string(filled, '#') << string(30 - filled, '-') << "] "
++         << fixed << setprecision(1) << setw(5) << f * 100. << "% | "
++         << setprecision(1) << years << " / " << total_years << " yr | dt "
++         << setprecision(5) << dt_years << " yr | " << steps << " steps | elapsed " << FormatDuration(wall)
++         << " | ETA " << (f > 0. ? FormatDuration(wall * (1. - f) / f) : string("?")) << defaultfloat << endl;
++}
++
++
++class Column1D {
++public:
++    explicit Column1D(const RunParameters& p) : p_(p), solver_kind_(DefaultSolverKind()) {}
++
++    int Run()
++    {
++        BuildModel();
++        Configure();
++        InitializeParameters();
++        CreateScheme();
++        InitializeLinearPressure();
++        if (p_.target_halite >= 0.)
++            InitializeHaliteSaturation();
++        ApplyHalitePermeability();
++        cvfem_->InitialFluidPropertiesFromPTX();
++        model_->CopyReplace("fluid pressure", "reference pressure");
++
++        VTU_Interface<dim> vtu(*model_);
++        vtu.OmitZeroInFileName(false);
++        Export(vtu, 0);
++        return TimeLoop(vtu);
++    }
++
++private:
++    const RunParameters& p_;
++    const SolverKind solver_kind_;
++    unique_ptr<Model<dim>> model_;
++    unique_ptr<CVFEM_PHX_Scheme<dim>> cvfem_;
++    unique_ptr<PermeabilityVisitor<dim>> permeability_;
++    ComputationalSettings run_settings_;
++    list<string> output_variables_ = {
++        "temperature", "fluid pressure", "fluid state", "fluid density", "fluid enthalpy",
++        "saturation liquid", "saturation vapor", "saturation halite", "salinity",
++        "permeability tensor", "velocity"};
++
++    static SolverKind DefaultSolverKind()
++    {
++#if defined(CSMP_WITH_PETSC_SOLVER)
++        return SolverKind::PETSc;
++#else
++        return SolverKind::SAMG;
++#endif
++    }
++
++    csmp::Index Key(const char* name) const { return model_->Database().StorageKey(name); }
++
++    void BuildModel()
++    {
++        ModelBuilder<dim> builder;
++        builder.CreateVariablesFile(false, false, false, false, false, false);
++        builder.CreateLimiterLogFile();
++        model_ = make_unique<Model1D<dim>>("Line", "PhysicalVariables.txt", p_.length, p_.elements);
++        model_->InstantiateFiniteVolumes();
++    }
++
++    void Configure()
++    {
++        // block 4 carries the fixed states at LEFT (x = 0) and RIGHT (x = length)
++        InputDataManager<dim> configuration;
++        configuration.ConfigureFromFile(*model_, p_.config.c_str(),
++                                        false, true, true, true, true, true, run_settings_);
++    }
++
++    void InitializeParameters()
++    {
++        Region<dim>& all = model_->Region("Model");
++        all.AssignNodeCoordinatesTo("coordinate x", 'x');
++        model_->InputPropertyValue("thickness", ScalarVariable(ANY, 1.0));
++
++        // total rock heat capacity (1 - phi) rho_r c_pr per node
++        const csmp::Index phi_key(Key("nodal porosity")), rho_key(Key("nodal density rock"));
++        const csmp::Index cpr_key(Key("nodal heat capacity rock")), cp_key(Key("nodal heat capacity"));
++        for (auto nit = all.NodesBegin(); nit != all.NodesEnd(); ++nit)
++            (*nit)->Store(cp_key, ScalarVariable(ANY, (*nit)->Read(cpr_key) * (*nit)->Read(rho_key)
++                                                      * (1. - (*nit)->Read(phi_key))));
++        model_->InterpolateNodeToCellProperty("nodal heat capacity", "total heat capacity");
++
++        // placeholders for fluid properties until the first equilibration
++        const double largest = p_.dt_max * year;
++        const vector<pair<const char*, double>> placeholders = {
++            {"courant liquid", largest}, {"courant vapor", largest},
++            {"liquid mass mobility density", 1.e-10}, {"vapor mass mobility density", 1.e-10},
++            {"density liquid transport", 1.}, {"density vapor transport", 1.},
++            {"liquid enthalpy mobility", 1.e-10}, {"vapor enthalpy mobility", 1.e-10},
++            {"liquid enthalpy mobility density", 1.e-10}, {"vapor enthalpy mobility density", 1.e-10},
++            {"density liquid", 1.}, {"density vapor", 1.}, {"viscosity liquid", 1.e-4},
++            {"viscosity vapor", 1.e-5}, {"enthalpy liquid", 100.}, {"enthalpy vapor", 100.},
++            {"fluid heat capacity", 1000.}, {"bulk fluid density", 1000.},
++            {"relperm viscosity liquid", 1.e-5}, {"relperm viscosity vapor", 1.e-5},
++            {"density halite", 1700.}, {"enthalpy halite", 200.},
++            {"previous compressibility", 1.e-4}, {"reference compressibility", 1.e-4},
++            {"conductivity", 1.}, {"mass conductivity", 1.}, {"fluid viscosity", 1.e-4}};
++        for (const auto& [name, value] : placeholders)
++            model_->InputPropertyValue(name, ScalarVariable(ANY, value));
++
++        model_->InputPropertyValue("permeability", ScalarVariable(ANY, p_.rock_permeability));
++        model_->CopyReplace("permeability", "horizontal permeability");
++        model_->CopyReplace("permeability", "vertical permeability");
++        model_->ExtrapolateCellToNodeProperty("permeability", "nodal permeability");
++
++        InitializeAllNaNsToZero();
++
++        permeability_ = make_unique<PermeabilityVisitor<dim>>(*model_);
++        permeability_->AssignPermeabilityTensor(*model_);
++        PoreVolumeVisitor<dim> pore_volume(*model_, "nodal porosity", "bulk volume", "pore volume", "thickness");
++        model_->Accept(pore_volume);
++        model_->CopyReplace("pore volume", "previous pore volume");
++    }
++
++    void InitializeAllNaNsToZero()
++    {
++        double min(0.), max(0.);
++        for (auto it = model_->Database().Begin(); it != model_->Database().End(); ++it) {
++            model_->MinMaxOf(it->first.c_str(), min, max);
++            if (!isnan(min) && !isnan(max))
++                continue;
++            if (it->second.key.type == SCALAR)
++                model_->InputPropertyValue(it->first.c_str(), ScalarVariable(ANY, 0.0));
++            else if (it->second.key.type == VECTOR)
++                model_->InputPropertyValue(it->first.c_str(), VectorVariable<dim>(ANY, 0.0));
++            else if (it->second.key.type == TENSOR)
++                model_->InputPropertyValue(it->first.c_str(), TensorVariable<dim>(ANY, 0.0));
++        }
++    }
++
++    void CreateScheme()
++    {
++        const bool with_gravity = model_->Read(Key("gravity flag"));
++        cvfem_ = make_unique<CVFEM_PHX_Scheme<dim>>(*model_, with_gravity, true, vector<string>{},
++                                                    false, false, solver_kind_, solver_kind_,
++                                                    map<string, WellConfiguration>{});
++        cvfem_->Adjust_CFL_Criterion(p_.cfl_scaling, true);
++        cvfem_->SetLinearSolverRelativeTolerance(p_.linear_rtol);
++        cvfem_->SetLinearSolverMaximumIterations(p_.linear_maxit);
++        cvfem_->AttemptToSurviveFluidPropertiesError(true);
++        cvfem_->IncludeWellCalculations(false);
++        cvfem_->SetRelativePermeabilityIgnoresHalite(p_.halite_permeability);
++        cerr << "\ncolumn: " << p_.elements << " elements over " << p_.length << " m, gravity "
++             << (with_gravity ? "on (x = 0 at the bottom)" : "off")
++             << (p_.halite_permeability ? ", Weis eq. 28 halite permeability" : "") << endl;
++    }
++
++    /** linear pressure between the two fixed end values (Weis 2014, condition 1) */
++    void InitializeLinearPressure()
++    {
++        const csmp::Index p_key(Key("fluid pressure"));
++        Region<dim>& all = model_->Region("Model");
++        double p_left(NAN), p_right(NAN);
++        for (auto nit = all.NodesBegin(); nit != all.NodesEnd(); ++nit) {
++            if ((*nit)->AtBoundary() == CNR1) p_left = (*nit)->Read(p_key);
++            if ((*nit)->AtBoundary() == CNR2) p_right = (*nit)->Read(p_key);
++        }
++        if (!(p_left == p_left) || !(p_right == p_right))
++            throw runtime_error("end-node pressures not found");
++        for (auto nit = all.NodesBegin(); nit != all.NodesEnd(); ++nit)
++            if ((*nit)->Status(p_key) != DIRICH)
++                (*nit)->Store(p_key, makeScalar(PLAIN, p_left + (*nit)->x() / p_.length * (p_right - p_left)));
++        cvfem_->InitialFluidPropertiesFromPTX();
++        cerr << "initial pressure: linear " << p_left << " -> " << p_right << " Pa" << endl;
++    }
++
++    /** bulk salinity per node such that the equilibrium halite saturation is target_halite;
++        nodes with fixed zero salinity (the pure-water inflow end) are left alone */
++    void InitializeHaliteSaturation()
++    {
++        const csmp::Index wt_key(Key("salinity")), sh_key(Key("saturation halite"));
++        Region<dim>& all = model_->Region("Model");
++        vector<Node<dim>*> nodes;
++        for (auto nit = all.NodesBegin(); nit != all.NodesEnd(); ++nit)
++            if (!((*nit)->Status(wt_key) == DIRICH && (*nit)->Read(wt_key) == 0.))
++                nodes.push_back(*nit);
++        vector<double> lo(nodes.size(), 20.), hi(nodes.size(), 80.);
++        for (int it = 0; it < 50; ++it) {
++            for (size_t i = 0; i < nodes.size(); ++i)
++                nodes[i]->Store(wt_key, makeScalar(nodes[i]->Status(wt_key) == DIRICH ? DIRICH : PLAIN,
++                                                   0.5 * (lo[i] + hi[i])));
++            cvfem_->InitialFluidPropertiesFromPTX();
++            for (size_t i = 0; i < nodes.size(); ++i)
++                (nodes[i]->Read(sh_key) > p_.target_halite ? hi[i] : lo[i]) = 0.5 * (lo[i] + hi[i]);
++        }
++        double wmin(1.e30), wmax(-1.e30), smin(1.e30), smax(-1.e30);
++        for (Node<dim>* n : nodes) {
++            wmin = min(wmin, n->Read(wt_key)); wmax = max(wmax, n->Read(wt_key));
++            smin = min(smin, n->Read(sh_key)); smax = max(smax, n->Read(sh_key));
++        }
++        cerr << "initial halite: salinity " << wmin << " - " << wmax << " wt%, S_h " << smin << " - "
++             << smax << " (target " << p_.target_halite << ")" << endl;
++    }
++
++    /** Weis (2014) eq. 28: k = k0 (1 - S_h)^2 per element, S_h averaged over the element nodes */
++    void ApplyHalitePermeability()
++    {
++        if (!p_.halite_permeability)
++            return;
++        const csmp::Index sh_key(Key("saturation halite"));
++        const csmp::Index khor_key(Key("horizontal permeability")), kver_key(Key("vertical permeability"));
++        Region<dim>& all = model_->Region("Model");
++        for (auto eit = all.CellsBegin(); eit != all.CellsEnd(); ++eit) {
++            double sh = 0.;
++            for (uint32_t i = 0U; i < (*eit)->Nodes(); ++i)
++                sh += (*eit)->N(i)->Read(sh_key) / (*eit)->Nodes();
++            const double k = p_.rock_permeability * pow(1. - clamp(sh, 0., 1.), 2);
++            (*eit)->Store(khor_key, ScalarVariable(ANY, k));
++            (*eit)->Store(kver_key, ScalarVariable(ANY, k));
++        }
++        permeability_->AssignPermeabilityTensor(*model_);
++    }
++
++    void Export(VTU_Interface<dim>& vtu, size_t index)
++    {
++        vtu.OutputDataToVTU(p_.output.c_str(), output_variables_, model_->Region("Model"), index);
++        const char* names[] = {"fluid pressure", "temperature", "saturation liquid", "saturation vapor",
++                               "saturation halite", "salinity", "fluid enthalpy"};
++        vector<csmp::Index> keys;
++        for (const char* n : names) keys.push_back(Key(n));
++        ofstream out(p_.output + "_profile_" + to_string(index) + ".csv");
++        out << "x_m,pressure_Pa,temperature_C,saturation_liquid,saturation_vapor,saturation_halite,"
++               "salinity_wt,enthalpy\n" << setprecision(12);
++        Region<dim>& all = model_->Region("Model");
++        vector<Node<dim>*> nodes(all.NodesBegin(), all.NodesEnd());
++        sort(nodes.begin(), nodes.end(), [](Node<dim>* a, Node<dim>* b) { return a->x() < b->x(); });
++        for (Node<dim>* n : nodes) {
++            out << n->x();
++            for (const csmp::Index& k : keys) out << "," << n->Read(k);
++            out << "\n";
++        }
++    }
++
++    int TimeLoop(VTU_Interface<dim>& vtu)
++    {
++        double& t = ModelTime::Instance().modelTime;
++        t = 0.;
++        const double dt_max = p_.dt_max * year, dt_min = p_.dt_min * year;
++        const double total = p_.snap_years.back();
++
++        cvfem_->SetLargestTimeStep(dt_max);
++        cvfem_->PrepareTransientCalculations();
++        cvfem_->ChangeTimeStepTo(p_.dt_initial * year);
++
++        const int saved_stdout = dup(fileno(stdout));   // the scheme is very chatty on stdout
++        fflush(stdout);
++        if (!freopen("/dev/null", "w", stdout)) {}
++
++        const auto wall0 = chrono::steady_clock::now();
++        auto wall = [&wall0]() { return chrono::duration<double>(chrono::steady_clock::now() - wall0).count(); };
++        size_t steps = 0, next = 1;
++        double last_print = -1.e30, dt = 0., free_dt = p_.dt_initial * year;
++        int status = 0;
++        while (next < p_.snap_years.size()) {
++            const double target = p_.snap_years[next] * year;
++            const double remaining = target - t;
++            const bool clamped = remaining < dt_max * (1. + 1.e-12);
++            cvfem_->ResetLargestTimeStep(min(dt_max, remaining));
++
++            cvfem_->SetModelTime(t);
++            dt = cvfem_->Apply();
++            ApplyHalitePermeability();
++            t += dt;
++            ++steps;
++
++            if (dt < dt_min && remaining - dt > 1.e-6 * year) {
++                cerr << "\ncsmp_1d_column: time step " << dt / year << " yr below dt_min at " << t / year << " yr" << endl;
++                status = 2;
++                break;
++            }
++            if (target - t <= 1.e-6 * year) {                   // landed on a snapshot instant
++                t = target;
++                Export(vtu, next);
++                ++next;
++                if (clamped)                                    // resume from the unclamped step size
++                    cvfem_->ChangeTimeStepTo(max(free_dt, dt));
++            }
++            else
++                free_dt = dt;
++
++            if (wall() - last_print >= 10. || next == p_.snap_years.size()) {
++                PrintProgress(t / year, total, dt / year, steps, wall());
++                last_print = wall();
++            }
++        }
++
++        fflush(stdout);
++        dup2(saved_stdout, fileno(stdout));
++        close(saved_stdout);
++
++        ofstream done(p_.output + "_run_status.txt");
++        done << (status == 0 ? "completed" : "failed") << " " << t / year << " " << steps << " " << wall() << "\n";
++        cerr << "\ncsmp_1d_column: " << (status == 0 ? "reached" : "stopped at") << " " << t / year
++             << " years in " << steps << " steps (" << FormatDuration(wall()) << ")" << endl;
++        return status;
++    }
++};
++
++} // namespace
++
++
++int main(int argc, char** argv)
++{
++    if (argc != 2) {
++        cerr << "usage: csmp_1d_column <run-file>   (written by csmp_1d_solver.py)" << endl;
++        return 1;
++    }
++#ifdef CSMP_WITH_PETSC_SOLVER
++    PetscInitializeNoArguments();
++#endif
++    int status = 1;
++    try {
++        const RunParameters p = ReadRunFile(argv[1]);
++        status = Column1D(p).Run();
++    }
++    catch (const exception& e) {
++        cerr << "\ncsmp_1d_column: " << e.what() << endl;
++    }
++    catch (...) {
++        cerr << "\ncsmp_1d_column: unknown exception" << endl;
++    }
++#ifdef CSMP_WITH_PETSC_SOLVER
++    PetscFinalize();
++#endif
++    return status;
++}
+diff --git a/hydrothermal_system_modelling/drivers/csmp_2d_plume.cpp b/hydrothermal_system_modelling/drivers/csmp_2d_plume.cpp
+new file mode 100644
+index 0000000..8d90cec
+--- /dev/null
++++ b/hydrothermal_system_modelling/drivers/csmp_2d_plume.cpp
+@@ -0,0 +1,542 @@
++// SPDX-FileCopyrightText: © 2026 Omar Duran
++//
++// SPDX-License-Identifier: LGPL-3.0-only
++
++/** @file csmp_2d_plume.cpp
++ *  @brief openCSMP driver behind csmp_2d_solver.py: the Weis et al. (2014, Geofluids 14,
++ *         347-371) Fig. 8 condition-2 heat-flux plume, optionally with a discrete fault and
++ *         barrier network: faults as conforming lower-dimensional line elements (thickness =
++ *         aperture), barriers as thin low-permeability 2D zones meshed explicitly.
++ *
++ *  Usage:  csmp_2d_plume <run-file>
++ *
++ *  The run file is written by csmp_2d_solver.py, one "key value..." entry per line:
++ *    mesh <basename>                 ANSYS .asc/.dat mesh + <basename>-regions.txt
++ *    config <basename>               openCSMP <basename>-configuration.txt
++ *    output <path prefix>            VTU files <prefix>_Model_(REGION)_<index>.vtu
++ *    snap_years <t0> <t1> ...        exact landing / export instants [yr]; t0 = 0
++ *    dt_nominal|dt_min|dt_max <yr>   adaptive time stepping
++ *    dt_constant <yr>                optional: fixed step, a step the scheme cuts is fatal
++ *    linear_rtol <r>, linear_maxit <n>
++ *    cfl_scaling <c>
++ *    q_background <W/m2>, q_anomaly <W/m2>, anomaly_x <xmin> <xmax>
++ *    rock_permeability <m2>, rock_porosity <->
++ *    fault <line region> <permeability m2> <aperture m>   (repeatable; --md)
++ *    zone <2D region> <permeability m2>                    (repeatable; --md barriers)
++ *    check_only 0|1                  build the model, export the initial state, stop
++ *
++ *  Numerics: the sequential CVFEM PHX scheme of Weis et al. (2014) -- one semi-implicit
++ *  pressure solve, explicit transport and one implicit heat-conduction solve per step,
++ *  no Newton iteration; the step is limited by CFL and mass criteria.
++ */
++
++#include "ANSYS_Model2D.h"
++#include "ComputationalSettings.h"
++#include "InputDataManager.h"
++#include "ModelBuilder.h"
++#include "ModelTime.h"
++
++#include "NumIntegral_dNT_op_dN_dV.h"
++#include "NumIntegral_NT_op_dNi_dV.h"
++
++#include "CVFEM_PHX_Scheme.h"
++#include "CVFEM_SolverChoice.h"
++#include "PermeabilityVisitor.h"
++#include "PoreVolumeVisitor.h"
++#include "VTU_Interface.h"
++
++#include <algorithm>
++#include <chrono>
++#include <cmath>
++#include <cstdio>
++#include <fstream>
++#include <iomanip>
++#include <iostream>
++#include <map>
++#include <memory>
++#include <set>
++#include <sstream>
++#include <string>
++#include <vector>
++#include <unistd.h>
++
++#ifdef CSMP_WITH_PETSC_SOLVER
++#include <petscsys.h>
++#endif
++
++using namespace std;
++using namespace csmp;
++
++namespace {
++
++constexpr uint32_t dim = 2U;
++constexpr double year = 365.0 * 86400.0; // [s], as in porepy_2d_solver.py
++
++struct FaultSpec {      // lower-dimensional line elements
++    string region;
++    double permeability;
++    double aperture;
++};
++
++struct ZoneSpec {       // full-dimensional region with its own permeability
++    string region;
++    double permeability;
++};
++
++struct RunParameters {
++    string mesh, config, output;
++    vector<double> snap_years;
++    double dt_nominal = 20., dt_min = 1.e-4, dt_max = 100., dt_constant = -1.;
++    double linear_rtol = 1.e-5;
++    int    linear_maxit = 400;
++    double cfl_scaling = 0.1;
++    double q_background = 0.05, q_anomaly = 5.0, anomaly_xmin = 4000., anomaly_xmax = 5000.;
++    double rock_permeability = 1.e-15, rock_porosity = 0.1;
++    vector<FaultSpec> faults;
++    vector<ZoneSpec> zones;
++    bool check_only = false;
++};
++
++RunParameters ReadRunFile(const string& path)
++{
++    ifstream in(path);
++    if (!in)
++        throw runtime_error("cannot open run file " + path);
++    RunParameters p;
++    string line;
++    while (getline(in, line)) {
++        if (line.empty() || line[0] == '#')
++            continue;
++        istringstream is(line);
++        string key;
++        is >> key;
++        if      (key == "mesh")              is >> p.mesh;
++        else if (key == "config")            is >> p.config;
++        else if (key == "output")            is >> p.output;
++        else if (key == "snap_years")        { double y; while (is >> y) p.snap_years.push_back(y); if (is.eof()) is.clear(); }
++        else if (key == "dt_nominal")        is >> p.dt_nominal;
++        else if (key == "dt_min")            is >> p.dt_min;
++        else if (key == "dt_max")            is >> p.dt_max;
++        else if (key == "dt_constant")       is >> p.dt_constant;
++        else if (key == "linear_rtol")       is >> p.linear_rtol;
++        else if (key == "linear_maxit")      is >> p.linear_maxit;
++        else if (key == "cfl_scaling")       is >> p.cfl_scaling;
++        else if (key == "q_background")      is >> p.q_background;
++        else if (key == "q_anomaly")         is >> p.q_anomaly;
++        else if (key == "anomaly_x")         is >> p.anomaly_xmin >> p.anomaly_xmax;
++        else if (key == "rock_permeability") is >> p.rock_permeability;
++        else if (key == "rock_porosity")     is >> p.rock_porosity;
++        else if (key == "fault")             { FaultSpec f; is >> f.region >> f.permeability >> f.aperture; p.faults.push_back(f); }
++        else if (key == "zone")              { ZoneSpec z; is >> z.region >> z.permeability; p.zones.push_back(z); }
++        else if (key == "check_only")        { int v; is >> v; p.check_only = v != 0; }
++        else
++            throw runtime_error("unknown run-file key '" + key + "'");
++        if (is.fail())
++            throw runtime_error("bad value in run-file line: " + line);
++    }
++    if (p.mesh.empty() || p.config.empty() || p.output.empty() || p.snap_years.size() < 2 || p.snap_years.front() != 0.)
++        throw runtime_error("run file needs mesh, config, output and snap_years starting at 0");
++    return p;
++}
++
++string FormatDuration(double seconds)
++{
++    const long s = lround(seconds);
++    ostringstream oss;
++    if (s >= 3600) oss << s / 3600 << "h" << setw(2) << setfill('0') << (s % 3600) / 60 << "m";
++    else if (s >= 60) oss << s / 60 << "m" << setw(2) << setfill('0') << s % 60 << "s";
++    else oss << s << "s";
++    return oss.str();
++}
++
++void PrintProgress(double years, double total_years, double dt_years, size_t steps, double wall)
++{
++    const double f = clamp(years / total_years, 0.0, 1.0);
++    const int filled = static_cast<int>(f * 30);
++    cerr << "csmp_2d_plume [" << string(filled, '#') << string(30 - filled, '-') << "] "
++         << fixed << setprecision(1) << setw(5) << f * 100. << "% | "
++         << setprecision(0) << years << " / " << total_years << " yr | dt "
++         << setprecision(4) << dt_years << " yr | " << steps << " steps | elapsed " << FormatDuration(wall)
++         << " | ETA " << (f > 0. ? FormatDuration(wall * (1. - f) / f) : string("?")) << defaultfloat << endl;
++}
++
++
++class Plume2D {
++public:
++    explicit Plume2D(const RunParameters& p) : p_(p), solver_kind_(DefaultSolverKind()) {}
++
++    int Run()
++    {
++        BuildModel();
++        CheckNetworkRegions();
++        Configure();
++        InitializeParameters();
++        CreateScheme();
++        ApplyBottomHeatFlux();
++        InitializeHydrostaticPressure();
++        DefineOutputVariables();
++
++        VTU_Interface<dim> vtu(*model_);
++        vtu.OmitZeroInFileName(false);
++        vtu.OutputDataToVTU(p_.output.c_str(), output_variables_, model_->Region("Model"), 0);
++        WriteSnapshotTimes(1);
++        if (p_.check_only) {
++            cerr << "\ncheck_only: model built and exported, stopping." << endl;
++            return 0;
++        }
++        return TimeLoop(vtu);
++    }
++
++private:
++    const RunParameters& p_;
++    const SolverKind solver_kind_;
++    unique_ptr<Model<dim>> model_;
++    unique_ptr<CVFEM_PHX_Scheme<dim>> cvfem_;
++    ComputationalSettings run_settings_;
++    list<string> output_variables_;
++
++    static SolverKind DefaultSolverKind()
++    {
++#if defined(CSMP_WITH_PETSC_SOLVER)
++        return SolverKind::PETSc;
++#else
++        return SolverKind::SAMG;
++#endif
++    }
++
++    void BuildModel()
++    {
++        ModelBuilder<dim> builder;
++        builder.CreateVariablesFile(false, false, false, false, false, false);
++        builder.CreateLimiterLogFile();
++        model_ = make_unique<ANSYS_Model2D>(p_.mesh.c_str(), p_.mesh.c_str(), "PhysicalVariables.txt");
++        model_->InstantiateFiniteVolumes();
++    }
++
++    void CheckNetworkRegions() const
++    {
++        for (const FaultSpec& f : p_.faults)
++            if (!model_->ContainsRegion(f.region))
++                throw runtime_error("fault region '" + f.region + "' not found in the mesh");
++        for (const ZoneSpec& z : p_.zones)
++            if (!model_->ContainsRegion(z.region))
++                throw runtime_error("zone '" + z.region + "' not found in the mesh");
++        for (const FaultSpec& f : p_.faults)
++            cerr << "\nfault " << f.region << ": " << model_->Region(f.region).Cells()
++                 << " line elements, k = " << f.permeability << " m2, aperture = " << f.aperture << " m";
++        for (const ZoneSpec& z : p_.zones)
++            cerr << "\nbarrier " << z.region << ": " << model_->Region(z.region).Cells()
++                 << " elements, k = " << z.permeability << " m2";
++        cerr << endl;
++    }
++
++    void Configure()
++    {
++        InputDataManager<dim> configuration;
++        configuration.ConfigureFromFile(*model_, p_.config.c_str(),
++                                        false, true, true, false, false, true, run_settings_);
++    }
++
++    void InitializeParameters()
++    {
++        const double largest = p_.dt_max * year;
++        Region<dim>& all = model_->Region("Model");
++        all.AssignNodeCoordinatesTo("nodal depth", 'y');
++        all.AssignNodeCoordinatesTo("coordinate x", 'x');
++        all.AssignNodeCoordinatesTo("coordinate y", 'y');
++
++        // thickness: 1 m out of plane for 2D elements, the aperture for the fault line elements
++        model_->InputPropertyValue("thickness", ScalarVariable(ANY, 1.0));
++        for (const FaultSpec& f : p_.faults)
++            model_->Region(f.region).InputPropertyValue("thickness", ScalarVariable(ANY, f.aperture));
++
++        // total rock heat capacity (1 - phi) rho_r c_pr per node
++        const csmp::Index phi_key(model_->Database().StorageKey("nodal porosity"));
++        const csmp::Index rho_key(model_->Database().StorageKey("nodal density rock"));
++        const csmp::Index cpr_key(model_->Database().StorageKey("nodal heat capacity rock"));
++        const csmp::Index cp_key (model_->Database().StorageKey("nodal heat capacity"));
++        for (auto nit = all.NodesBegin(); nit != all.NodesEnd(); ++nit)
++            (*nit)->Store(cp_key, ScalarVariable(ANY, (*nit)->Read(cpr_key) * (*nit)->Read(rho_key)
++                                                      * (1. - (*nit)->Read(phi_key))));
++        model_->InterpolateNodeToCellProperty("nodal heat capacity", "total heat capacity");
++
++        // placeholders for fluid properties until the first equilibration
++        const vector<pair<const char*, double>> placeholders = {
++            {"courant liquid", largest}, {"courant vapor", largest},
++            {"liquid mass mobility density", 1.e-10}, {"vapor mass mobility density", 1.e-10},
++            {"density liquid transport", 1.}, {"density vapor transport", 1.},
++            {"liquid enthalpy mobility", 1.e-10}, {"vapor enthalpy mobility", 1.e-10},
++            {"liquid enthalpy mobility density", 1.e-10}, {"vapor enthalpy mobility density", 1.e-10},
++            {"density liquid", 1.}, {"density vapor", 1.}, {"viscosity liquid", 1.e-4},
++            {"viscosity vapor", 1.e-5}, {"enthalpy liquid", 100.}, {"enthalpy vapor", 100.},
++            {"fluid heat capacity", 1000.}, {"bulk fluid density", 1000.},
++            {"relperm viscosity liquid", 1.e-5}, {"relperm viscosity vapor", 1.e-5},
++            {"density halite", 1700.}, {"enthalpy halite", 200.},
++            {"previous compressibility", 1.e-4}, {"reference compressibility", 1.e-4},
++            {"conductivity", 1.}, {"mass conductivity", 1.}, {"fluid viscosity", 1.e-4}};
++        for (const auto& [name, value] : placeholders)
++            model_->InputPropertyValue(name, ScalarVariable(ANY, value));
++
++        // permeability: rock everywhere, then barriers and faults; the scheme flows through
++        // "permeability tensor", built from horizontal/vertical k (isotropic here). Faults are
++        // assigned last, so a fault crossing a barrier stays conductive (as PorePy's 0D
++        // intersections, which carry fault-grade permeability).
++        model_->InputPropertyValue("permeability", ScalarVariable(ANY, p_.rock_permeability));
++        for (const ZoneSpec& z : p_.zones)
++            model_->Region(z.region).InputPropertyValue("permeability", ScalarVariable(ANY, z.permeability));
++        for (const FaultSpec& f : p_.faults)
++            model_->Region(f.region).InputPropertyValue("permeability", ScalarVariable(ANY, f.permeability));
++        model_->CopyReplace("permeability", "horizontal permeability");
++        model_->CopyReplace("permeability", "vertical permeability");
++        model_->ExtrapolateCellToNodeProperty("permeability", "nodal permeability");
++
++        // "region ID" labels for output: 0 rock, 1.. barriers in input order, then the faults
++        model_->InputPropertyValue("region ID", ScalarVariable(ANY, 0.));
++        double id = 0.;
++        for (const ZoneSpec& z : p_.zones)
++            model_->Region(z.region).InputPropertyValue("region ID", ScalarVariable(ANY, ++id));
++        for (const FaultSpec& f : p_.faults)
++            model_->Region(f.region).InputPropertyValue("region ID", ScalarVariable(ANY, ++id));
++
++        InitializeAllNaNsToZero();
++
++        PermeabilityVisitor<dim> permeability(*model_);
++        permeability.AssignPermeabilityTensor(*model_);
++        PoreVolumeVisitor<dim> pore_volume(*model_, "nodal porosity", "bulk volume", "pore volume", "thickness");
++        model_->Accept(pore_volume);
++        model_->CopyReplace("pore volume", "previous pore volume");
++    }
++
++    void InitializeAllNaNsToZero()
++    {
++        double min(0.), max(0.);
++        for (auto it = model_->Database().Begin(); it != model_->Database().End(); ++it) {
++            model_->MinMaxOf(it->first.c_str(), min, max);
++            if (!isnan(min) && !isnan(max))
++                continue;
++            if (it->second.key.type == SCALAR)
++                model_->InputPropertyValue(it->first.c_str(), ScalarVariable(ANY, 0.0));
++            else if (it->second.key.type == VECTOR)
++                model_->InputPropertyValue(it->first.c_str(), VectorVariable<dim>(ANY, 0.0));
++            else if (it->second.key.type == TENSOR)
++                model_->InputPropertyValue(it->first.c_str(), TensorVariable<dim>(ANY, 0.0));
++        }
++    }
++
++    void CreateScheme()
++    {
++        const PropertyDatabase<dim>& pd = model_->Database();
++        const bool with_gravity  = model_->Read(pd.StorageKey("gravity flag"));
++        const bool open_top      = model_->Read(pd.StorageKey("open top"));
++        const double salt_top    = model_->Read(pd.StorageKey("salinity top"));
++
++        cvfem_ = make_unique<CVFEM_PHX_Scheme<dim>>(*model_, with_gravity, true, vector<string>{},
++                                                    false, false, solver_kind_, solver_kind_,
++                                                    map<string, WellConfiguration>{});
++        cvfem_->Adjust_CFL_Criterion(p_.cfl_scaling, true);
++        cvfem_->SetLinearSolverRelativeTolerance(p_.linear_rtol);
++        cvfem_->SetLinearSolverMaximumIterations(p_.linear_maxit);
++        cvfem_->AttemptToSurviveFluidPropertiesError(true);
++        cvfem_->IncludeWellCalculations(false);
++        if (open_top)
++            cvfem_->OpenBoundaries(salt_top);
++    }
++
++    /** Neumann heat influx along BOTTOM: q_background, and q_anomaly on faces whose
++        midpoint lies in [anomaly_xmin, anomaly_xmax]; integrated to nodal sources [W]. */
++    void ApplyBottomHeatFlux()
++    {
++        const csmp::Index hfb_key(model_->Database().StorageKey("nodal heat flux bottom"));
++        model_->InputPropertyValue("nodal heat flux bottom", ScalarVariable(ANY, 0.));
++        const Boundary<dim>& bottom = model_->Boundary("BOTTOM");
++        double total(0.), anomaly(0.);
++        for (auto fit = bottom.CellsBegin(); fit != bottom.CellsEnd(); ++fit) {
++            const uint32_t nn = (*fit)->Nodes();
++            double xmid(0.);
++            for (uint32_t i = 0U; i < nn; ++i)
++                xmid += (*fit)->N(i)->x() / nn;
++            const bool in_anomaly = xmid >= p_.anomaly_xmin && xmid <= p_.anomaly_xmax;
++            const double q = (in_anomaly ? p_.q_anomaly : p_.q_background) * (*fit)->Area();
++            for (uint32_t i = 0U; i < nn; ++i) {
++                Node<dim>* n = (*fit)->N(i);
++                n->Store(hfb_key, ScalarVariable(ANY, n->Read(hfb_key) + q / nn));
++            }
++            total += q;
++            if (in_anomaly) anomaly += q;
++        }
++        cerr << "\nBottom heat influx: " << total << " W (anomaly " << anomaly << " W over x = "
++             << p_.anomaly_xmin << " ... " << p_.anomaly_xmax << " m)" << endl;
++    }
++
++    void InitializeHydrostaticPressure()
++    {
++        SolverBundle bundle(solver_kind_);
++#if defined(CSMP_WITH_PETSC_SOLVER)
++        if (solver_kind_ == SolverKind::PETSc) {
++            bundle.PETScSettings().SetKSPType("gmres");
++            bundle.PETScSettings().SetPCType("gamg");
++        }
++#endif
++        // The steady hydrostatic solve uses the rock only: the fault line elements are switched
++        // off (k = 0) and restored afterwards, so their shared nodes take the matrix's
++        // hydrostatic pressure instead of a column integrated along the inclined lines.
++        for (const FaultSpec& f : p_.faults)
++            model_->Region(f.region).InputPropertyValue("permeability", ScalarVariable(ANY, 0.));
++
++        PDE_Integrator<dim>           hydrostatic(bundle.Get());
++        NumIntegral_dNT_op_dN_dV<dim> conductance(model_->Database(), "permeability", "fluid pressure", "fluid pressure");
++        NumIntegral_NT_op_dNi_dV<dim> gravity(model_->Database(), "fluid density", "permeability", "fluid pressure");
++        hydrostatic.Add(&conductance);
++        hydrostatic.Add(&gravity);
++
++        model_->Apply(hydrostatic);
++        for (int k = 0; k < 100; ++k) {
++            model_->CopyReplace("fluid pressure", "test fluid pressure");
++            cvfem_->InitialFluidPropertiesFromPTX();
++            model_->Apply(hydrostatic);
++            const double diff = MaxDifference("fluid pressure", "test fluid pressure");
++            cerr << "Hydrostatic pressure iteration " << k << ": max change " << diff << " Pa" << endl;
++            if (!(diff == diff))
++                throw runtime_error("NaN in the initial pressure field");
++            if (diff < 1000.)
++                break;
++        }
++        cvfem_->InitialFluidPropertiesFromPTX();
++        model_->CopyReplace("fluid pressure", "reference pressure");
++        for (const FaultSpec& f : p_.faults)
++            model_->Region(f.region).InputPropertyValue("permeability", ScalarVariable(ANY, f.permeability));
++    }
++
++    double MaxDifference(const char* a, const char* b) const
++    {
++        const csmp::Index ka(model_->Database().StorageKey(a)), kb(model_->Database().StorageKey(b));
++        double m(0.);
++        const Region<dim>& mref = model_->Region("Model");
++        for (auto nit = mref.NodesBegin(); nit != mref.NodesEnd(); ++nit)
++            m = max(m, fabs((*nit)->Read(ka) - (*nit)->Read(kb)));
++        return m;
++    }
++
++    void DefineOutputVariables()
++    {
++        output_variables_ = {
++            "temperature", "fluid pressure", "reference pressure", "fluid state",
++            "fluid density", "fluid enthalpy", "saturation liquid", "saturation vapor",
++            "saturation halite", "salinity", "density liquid", "viscosity liquid",
++            "velocity", "velocity liquid", "velocity vapor", "permeability",
++            "permeability tensor", "thickness", "region ID", "nodal porosity", "nodal heat flux bottom", "dt"};
++    }
++
++    void WriteSnapshotTimes(size_t written) const
++    {
++        ofstream out(p_.output + "_snapshot_years.txt");
++        out << "# index years\n";
++        for (size_t i = 0; i < written; ++i)
++            out << i << " " << setprecision(12) << p_.snap_years[i] << "\n";
++    }
++
++    int TimeLoop(VTU_Interface<dim>& vtu)
++    {
++        double& t = ModelTime::Instance().modelTime;
++        t = 0.;
++        const bool constant = p_.dt_constant > 0.;
++        const double dt_max = (constant ? p_.dt_constant : p_.dt_max) * year;
++        const double dt_min = p_.dt_min * year;
++        const double total = p_.snap_years.back();
++
++        cvfem_->SetLargestTimeStep(dt_max);
++        cvfem_->PrepareTransientCalculations();
++        cvfem_->ChangeTimeStepTo(constant ? dt_max : p_.dt_nominal * year);
++
++        const int saved_stdout = dup(fileno(stdout));   // the scheme is very chatty on stdout
++        fflush(stdout);
++        if (!freopen("/dev/null", "w", stdout)) {}
++
++        const auto wall0 = chrono::steady_clock::now();
++        auto wall = [&wall0]() { return chrono::duration<double>(chrono::steady_clock::now() - wall0).count(); };
++        size_t steps = 0, next = 1;
++        double last_print = -1.e30, dt = 0., free_dt = constant ? dt_max : p_.dt_nominal * year;
++        int status = 0;
++        while (next < p_.snap_years.size()) {
++            const double target = p_.snap_years[next] * year;
++            const double remaining = target - t;
++            const bool clamped = remaining < dt_max * (1. + 1.e-12);
++            cvfem_->ResetLargestTimeStep(min(dt_max, remaining));
++            if (constant)
++                cvfem_->ChangeTimeStepTo(min(dt_max, remaining));
++
++            cvfem_->SetModelTime(t);
++            dt = cvfem_->Apply();
++            t += dt;
++            ++steps;
++            model_->InputPropertyValue("dt", ScalarVariable(ANY, dt));
++
++            if (constant && dt < min(dt_max, remaining) * (1. - 1.e-9)) {
++                cerr << "\ncsmp_2d_plume: the scheme cut the constant step to " << dt / year
++                     << " yr at " << t / year << " yr (CFL/mass limit) -- failing as --dt-constant requires" << endl;
++                status = 2;
++                break;
++            }
++            if (dt < dt_min && remaining - dt > 1.e-6 * year) {
++                cerr << "\ncsmp_2d_plume: time step " << dt / year << " yr below dt_min at " << t / year << " yr" << endl;
++                status = 2;
++                break;
++            }
++
++            if (target - t <= 1.e-6 * year) {                   // landed on a snapshot instant
++                t = target;
++                vtu.OutputDataToVTU(p_.output.c_str(), output_variables_, model_->Region("Model"), next);
++                ++next;
++                WriteSnapshotTimes(next);
++                if (clamped)                                    // resume from the unclamped step size
++                    cvfem_->ChangeTimeStepTo(max(free_dt, dt));
++            }
++            else
++                free_dt = dt;
++
++            if (wall() - last_print >= 30. || next == p_.snap_years.size()) {
++                PrintProgress(t / year, total, dt / year, steps, wall());
++                last_print = wall();
++            }
++        }
++
++        fflush(stdout);
++        dup2(saved_stdout, fileno(stdout));
++        close(saved_stdout);
++
++        ofstream done(p_.output + "_run_status.txt");
++        done << (status == 0 ? "completed" : "failed") << " " << t / year << " " << steps << " " << wall() << "\n";
++        cerr << "\ncsmp_2d_plume: " << (status == 0 ? "reached" : "stopped at") << " " << t / year
++             << " years in " << steps << " steps (" << FormatDuration(wall()) << ")" << endl;
++        return status;
++    }
++};
++
++} // namespace
++
++
++int main(int argc, char** argv)
++{
++    if (argc != 2) {
++        cerr << "usage: csmp_2d_plume <run-file>   (written by csmp_2d_solver.py)" << endl;
++        return 1;
++    }
++#ifdef CSMP_WITH_PETSC_SOLVER
++    PetscInitializeNoArguments();
++#endif
++    int status = 1;
++    try {
++        const RunParameters p = ReadRunFile(argv[1]);
++        status = Plume2D(p).Run();
++    }
++    catch (const exception& e) {
++        cerr << "\ncsmp_2d_plume: " << e.what() << endl;
++    }
++    catch (...) {
++        cerr << "\ncsmp_2d_plume: unknown exception" << endl;
++    }
++#ifdef CSMP_WITH_PETSC_SOLVER
++    PetscFinalize();
++#endif
++    return status;
++}

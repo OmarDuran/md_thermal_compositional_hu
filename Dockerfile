@@ -4,8 +4,8 @@
 # The image extends the PorePy development image (branch develop) with the scripts of
 # this repository, which replace the geothermal_flow example shipped with PorePy.
 #
-# Build from the root of this repository. The OBL tables listed in .dockerignore must be
-# on disk, since they are too large for git:
+# Build from the root of this repository. The OBL tables listed in .dockerignore and the
+# openCSMP lookup tables in opencsmp/tables/ must be on disk, since they are too large for git:
 #
 #    docker build -t md_thermal_compositional_hu .
 #
@@ -51,6 +51,27 @@ RUN apt-get update && \
     PETSC_CONFIGURE_OPTIONS="--download-mumps --download-scalapack --download-metis --download-parmetis --download-hypre" \
         pip install --no-cache-dir petsc petsc4py && \
     python -c "from petsc4py import PETSc; assert all(PETSc.Sys.hasExternalPackage(p) for p in ('mumps', 'hypre'))"
+
+# openCSMP (CSMP++, LGPL-3.0) runs the Weis et al. (2014) 1D benchmarks (csmp_1d_solver.py):
+# cloned at a pinned commit, patched with the column and plume drivers, built against the
+# PETSc above. The patched source, LICENSES/ and the fetched dependency sources stay in the
+# image; only the git history and the build intermediates are removed. The lookup tables
+# (built by openCSMP on a first run, about an hour) are copied from opencsmp/tables/.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends pkg-config libcgns-dev libhdf5-dev && \
+    rm -rf /var/lib/apt/lists/*
+COPY opencsmp/tables/ /workdir/openCSMP_tables/
+ENV CSMP_TABLES_DIR=/workdir/openCSMP_tables
+ARG OPENCSMP_COMMIT=a164273282965a3afa34ef6995f45a22ebeebfc7
+COPY opencsmp/opencsmp_weis.patch /workdir/openCSMP_weis.patch
+RUN git clone https://github.com/openCSMP/openCSMP.git /workdir/openCSMP && \
+    cd /workdir/openCSMP && git checkout ${OPENCSMP_COMMIT} && git apply /workdir/openCSMP_weis.patch && \
+    export PKG_CONFIG_PATH=$(python -c "import petsc; print(petsc.get_petsc_dir())")/lib/pkgconfig && \
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=ON && \
+    cmake --build build --target csmp_1d_column csmp_2d_plume -j 3 && \
+    echo "${OPENCSMP_COMMIT} + ../openCSMP_weis.patch" > OPENCSMP_VERSION && rm -rf .git && \
+    find build -mindepth 1 -maxdepth 1 ! -name csmp_1d_column ! -name csmp_2d_plume ! -name _deps -exec rm -rf {} + && \
+    rm -rf build/_deps/*-build build/_deps/*-subbuild
 
 ENV EXAMPLE_DIR=${POREPY_HOME}/src/porepy/examples/geothermal_flow
 
