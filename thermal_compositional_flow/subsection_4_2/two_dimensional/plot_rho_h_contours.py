@@ -96,7 +96,7 @@ def _panel(ax, folder, field, vmin, vmax, cmap, index):
     e = m2.extract_all_edges()
     conn = e.lines.reshape(-1, 3)[:, 1:]
     ax.add_collection(LineCollection(e.points[conn][:, :, :2], colors="0.35",
-                                     linewidths=0.3, zorder=2))
+                                     linewidths=0.15, zorder=2))
 
     f1, _ = _latest_file(folder, 1, index)
     if f1 is not None:
