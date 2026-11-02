@@ -32,7 +32,7 @@ FIELDS = {
 def read_digitized(path):
     with open(path) as f:
         rows = [r for r in csv.reader(f)][1:]
-    xy = np.array([[float(a), float(b)] for a, b in rows if a.strip() and b.strip()])
+    xy = np.array([[float(a), float(b)] for r in rows if len(r) >= 2 and r[0].strip() and r[1].strip() for a, b in [r[:2]]])
     return xy[np.argsort(xy[:, 0])]
 
 

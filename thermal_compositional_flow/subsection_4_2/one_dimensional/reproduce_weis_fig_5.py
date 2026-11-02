@@ -1,7 +1,7 @@
 """Weis (2014) Figure 5 -- two-phase, pure water. 2x2 panels: columns {horizontal 200 yr,
 vertical 1000 yr}, rows {temperature+pressure, liquid saturation}. The single weis brine engine at
-z=0 (``weis_1d_solver.run_brine(**FIG5)``) for PPU / HU / HU-mwp, overlaid on the digitized paper
-reference. The heavy N=800 runs are cached in ``_cache/`` (delete to recompute).
+z=0 (``weis_1d_solver.run_brine(**FIG5)``) for PPU / HU / HU-mwp, overlaid on the openCSMP
+reference (csmp_1d_solver.py). The heavy N=800 runs are cached in ``_cache/`` (delete to recompute).
 
     python reproduce_weis_fig_5.py            # compute (or load cache) + render figures/reproduce_weis_fig_5
 """
@@ -94,9 +94,9 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
         res = {sk: out[(sk, case)] for sk in ps.SCHEMES if (sk, case) in out}
         panels.append(res)
         C.draw_tp(ax_tp, ax_p, res,
-                  ref_T=C.ref_csv(f"fig_5_{case}_temperature_raw.csv"),
-                  ref_p=C.ref_csv(f"fig_5_{case}_pressured_raw.csv"))
-        C.draw_s(ax_s, res, ref_s=C.ref_csv(f"fig_5_{case}_saturation_liq_raw.csv"))
+                  ref_T=C.csmp_ref(f"fig_5_{case}", "T"),
+                  ref_p=C.csmp_ref(f"fig_5_{case}", "p"), ref_style=C.CSMP_STYLE)
+        C.draw_s(ax_s, res, ref_s=C.csmp_ref(f"fig_5_{case}", "s_liq"), ref_style=C.CSMP_STYLE)
         extra_it = []
         if not C.is_skipped("ppu-weis", skip) and ("ppu_weis", case) in out:
             w = out[("ppu_weis", case)]                       # PPU-Weis 4th curve (Fig 5 only)
@@ -140,7 +140,7 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW, label=POREPY_LABEL))
     handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"$T$ (warm, left)"),
                 Line2D([0], [0], color=ps.SCHEMES["hu"]["cool"], ls="-", lw=3, label=r"$p$ (cool, right)"),
-                C.ref_legend_handle()]
+                C.ref_legend_handle(C.CSMP_LABEL, C.CSMP_STYLE)]
     fig.tight_layout()
     ps.bottom_legend(fig, handles, [h.get_label() for h in handles], ncol=4)
     ps.savefig(fig, stem, C.OUT_DIR)

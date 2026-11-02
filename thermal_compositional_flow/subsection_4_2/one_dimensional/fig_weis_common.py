@@ -37,17 +37,40 @@ REF_MS = 3.6
 REF_NMARK = 14                                       # ~this many markers along each reference curve
 
 
-def _ref_plot(ax, ref, color, marker, ls, zorder=2):
+# The openCSMP reference is black, on top of the scheme curves, with white-filled markers.
+CSMP_STYLE = dict(color="k", lw=1.3, ms=4.6, mfc="white", zorder=8)
+
+
+def _ref_plot(ax, ref, color, marker, ls, zorder=2, lw=REF_LW, ms=REF_MS, mfc="none"):
     x, v = ref
-    ax.plot(x, v, color=color, ls=ls, lw=REF_LW, marker=marker, mfc="none", mec=color, ms=REF_MS,
-            mew=0.8, markevery=max(1, len(x) // REF_NMARK), zorder=zorder)
+    ax.plot(x, v, color=color, ls=ls, lw=lw, marker=marker, mfc=mfc, mec=color, ms=ms,
+            mew=0.9, markevery=max(1, len(x) // REF_NMARK), zorder=zorder)
 
 
-def ref_legend_handle():
-    """Neutral legend proxy for the Weis reference (thin line + open marker)."""
+def ref_legend_handle(label=r"Weis et al.\ (2014)", style=None):
+    """Legend proxy for the reference (line + marker); ``style`` as CSMP_STYLE, else neutral grey."""
     from matplotlib.lines import Line2D
-    return Line2D([0], [0], color="0.3", lw=REF_LW, marker="o", mfc="none", mec="0.3", ms=REF_MS,
-                  label=r"Weis et al.\ (2014)")
+    st = style or dict(color="0.3", lw=REF_LW, ms=REF_MS, mfc="none")
+    return Line2D([0], [0], color=st["color"], lw=st["lw"], marker="o", mfc=st["mfc"], mec=st["color"],
+                  ms=st["ms"], label=label)
+
+
+CSMP_LABEL = "openCSMP"
+CSMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "csmp_visualization")
+_CSMP_COL = {"T": ("temperature_C", 1.0), "p": ("pressure_Pa", 1.0e-6),
+             "s_liq": ("saturation_liquid", 1.0), "s_halite": ("saturation_halite", 1.0)}
+
+
+def csmp_ref(case, field):
+    """openCSMP reference ``(distance_km, value)`` from csmp_1d_solver.py (``case`` as in its CASES,
+    e.g. ``fig_4_hp_vertical``), or ``None`` if that case has not been run."""
+    path = os.path.join(CSMP_DIR, case, "csmp_profile_1.csv")
+    if not os.path.exists(path):
+        print(f"openCSMP reference missing: {path}")
+        return None
+    d = np.genfromtxt(path, delimiter=",", names=True)
+    col, scale = _CSMP_COL[field]
+    return d["x_m"] / 1000.0, d[col] * scale
 
 _KEEP = ("y", "T", "p", "s_liq", "s_halite", "Xl", "total_it", "avg_it", "n_time_step_cuts")
 
@@ -204,14 +227,16 @@ def iteration_legend(ax, results, loc="lower right", fontsize=6.0, title=r"\text
     return leg
 
 
-def draw_tp(ax_tp, ax_p, results, ref_T=None, ref_p=None, label_it=True):
+def draw_tp(ax_tp, ax_p, results, ref_T=None, ref_p=None, label_it=True, ref_style=None):
     """Draw the temperature(left)+pressure(right, dashed) panel: the light reference band underneath,
     then the three scheme curves. ``results`` = {scheme_key: result}. Returns the (handles, labels)
     for a scheme legend (saturation-panel style: colour + iteration count)."""
+    st = dict(ref_style or {})
+    cT, cP = st.pop("color", WEIS_T), (ref_style or {}).get("color", WEIS_P)
     if ref_T is not None:
-        _ref_plot(ax_tp, ref_T, WEIS_T, "o", "-")
+        _ref_plot(ax_tp, ref_T, cT, "o", "-", **st)
     if ref_p is not None:
-        _ref_plot(ax_p, ref_p, WEIS_P, "^", P_LS)
+        _ref_plot(ax_p, ref_p, cP, "^", P_LS, **st)
     for sk in ps.SCHEMES:
         if sk not in results:
             continue
@@ -220,11 +245,12 @@ def draw_tp(ax_tp, ax_p, results, ref_T=None, ref_p=None, label_it=True):
         ax_p.plot(*ps.to_plot_units(r, "p"), color=cfg["cool"], ls=cfg["dash"], lw=ps.CURVE_LW, zorder=3)   # p -> cool (right)
 
 
-def draw_s(ax_s, results, ref_s=None, halite=False):
+def draw_s(ax_s, results, ref_s=None, halite=False, ref_style=None):
     """Draw the liquid-saturation panel (light reference band + three scheme curves). If ``halite``,
     a dashed halite-saturation twin is added when any scheme carries s_halite > 0."""
     if ref_s is not None:
-        _ref_plot(ax_s, ref_s, WEIS_S, "s", "-")
+        st = dict(ref_style or {})
+        _ref_plot(ax_s, ref_s, st.pop("color", WEIS_S), "s", "-", **st)
     ax_h = None
     for sk in ps.SCHEMES:
         if sk not in results:

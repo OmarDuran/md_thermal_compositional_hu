@@ -1,7 +1,7 @@
 """Weis (2014) Figure 4 -- single-phase heating fronts. 3x2 panels: rows {high, moderate, low}
 pressure (hP/mP/lP), columns {horizontal, vertical}, each showing temperature (red, left axis) and
 pressure (blue, right axis) vs distance. The single weis brine engine at z=0 for PPU / HU / HU-mwp,
-overlaid on the digitized paper reference. Each panel has its own BC preset and final time; the heavy
+overlaid on the openCSMP reference (csmp_1d_solver.py). Each panel has its own BC preset and final time; the heavy
 N=800 runs are cached in ``_cache/`` (some are 1500 yr).
 
     python reproduce_weis_fig_4.py            # compute (or load cache) + render figures/reproduce_weis_fig_4
@@ -101,8 +101,8 @@ def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
             res = {sk: out[(sk, lvl, orient)] for sk in ps.SCHEMES if (sk, lvl, orient) in out}
             panels.append(res)
             C.draw_tp(ax_tp, ax_p, res,
-                      ref_T=C.ref_csv(f"fig_4_{lvl}_{orient}_temperature_raw.csv"),
-                      ref_p=C.ref_csv(f"fig_4_{lvl}_{orient}_pressure_raw.csv"))
+                      ref_T=C.csmp_ref(f"fig_4_{lvl}_{orient}", "T"),
+                      ref_p=C.csmp_ref(f"fig_4_{lvl}_{orient}", "p"), ref_style=C.CSMP_STYLE)
             pp_res = None if C.is_skipped("hu-porepy", skip) else _load_porepy(lvl, orient)  # PorePy overlay
             pp_it = pp_res.get("total_it") if pp_res else None
             if pp_res is not None:                          # PorePy overlay: warm T / cool p, PorePy dash
@@ -137,7 +137,7 @@ def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
                               label=POREPY_LABEL))
     handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"$T$ (warm, left)"),
                 Line2D([0], [0], color=ps.SCHEMES["hu"]["cool"], ls="-", lw=3, label=r"$p$ (cool, right)"),
-                C.ref_legend_handle()]
+                C.ref_legend_handle(C.CSMP_LABEL, C.CSMP_STYLE)]
     fig.tight_layout()
     ps.bottom_legend(fig, handles, [h.get_label() for h in handles], ncol=4)
     ps.savefig(fig, stem, C.OUT_DIR)
