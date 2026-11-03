@@ -1,9 +1,9 @@
 """Weis (2014) Figure 6 -- H2O-NaCl, horizontal column, 2000 yr. 2x2 panels: columns {pure water
 z=0, salt + immobile halite z>0}, rows {temperature+pressure, liquid(+halite) saturation}. The
 single weis brine engine for PPU / HU / HU-mwp, both columns sampling the graded OBL (z=0 slice for
-pure water, z=salt_z for salt). The digitized Weis (2014) Fig-6 reference is overlaid from
-benchmark_figures_data/fig_6_{pw,salt}_*.csv. If the salt column fails to converge it is drawn as a
-placeholder, so the figure always renders.
+pure water, z=salt_z for salt). The openCSMP reference (csmp_1d_solver.py) is overlaid on the Weis
+grid (dx = 10 m). If the salt column fails to converge it is drawn as a placeholder, so the figure always
+renders.
 
     python reproduce_weis_fig_6.py                         # pure water + salt (z_init=0.42 -> S_h~0.1)
     python reproduce_weis_fig_6.py --salt-z-init 0.3 --N 200
@@ -94,22 +94,19 @@ def plot(out, stem="reproduce_weis_fig_6", skip=frozenset()):
         ps.panel_tag(ax_tp, tags[0][j], loc=(0.04, 0.09), va="bottom")
         ps.panel_tag(ax_s, tags[1][j])
         ax_h = None
-        # Always draw the digitized Weis (2014) Fig-6 reference (benchmark_figures_data/fig_6_{col}_*.csv)
-        # so the target is visible even when the solver is pending; the solver curves, iteration counts
-        # and PorePy overlay draw only on a converged result.
+        # openCSMP reference on the Weis grid (dx = 10 m); the salt case collapses on dx = 2.5 m
+        case = f"fig_6_{col}_n200"
         C.draw_tp(ax_tp, ax_p, res or {},
-                  ref_T=C.ref_csv(f"fig_6_{col}_temperature_raw.csv"),
-                  ref_p=C.ref_csv(f"fig_6_{col}_pressure_raw.csv"))
-        ax_h = C.draw_s(ax_s, res or {}, ref_s=C.ref_csv(f"fig_6_{col}_saturation_liq_raw.csv"),
+                  ref_T=C.csmp_ref(case, "T"), ref_p=C.csmp_ref(case, "p"), ref_style=C.CSMP_STYLE)
+        ax_h = C.draw_s(ax_s, res or {}, ref_s=C.csmp_ref(case, "s_liq"), ref_style=C.CSMP_STYLE,
                         halite=(col == "salt"))
-        if col == "salt":                                    # halite-saturation reference, twin axis
-            ref_sh = C.ref_csv("fig_6_salt_saturation_halite_raw.csv")
+        if col == "salt" and ax_h is None:
+            ax_h = ax_s.twinx(); ax_h.grid(False); ax_h.set_ylim(-0.03, 1.03)
+        if ax_h is not None:                                 # halite-saturation reference, twin axis
+            ref_sh = C.csmp_ref(case, "s_halite")
             if ref_sh is not None:
-                if ax_h is None:
-                    ax_h = ax_s.twinx(); ax_h.grid(False); ax_h.set_ylim(-0.03, 1.03)
-                ax_h.plot(ref_sh[0], ref_sh[1], color=C.WEIS_S, ls=(0, (1, 1)), lw=C.REF_LW,
-                          marker="D", mfc="none", mec=C.WEIS_S, ms=C.REF_MS, mew=0.8, zorder=2,
-                          markevery=max(1, len(ref_sh[0]) // C.REF_NMARK))
+                st = dict(C.CSMP_STYLE)
+                C._ref_plot(ax_h, ref_sh, st.pop("color"), "D", "-", **st)
         if res is None:                                      # solver unavailable -> reference only
             for ax in (ax_tp, ax_s):
                 ax.text(0.5, 0.93, "solver pending", transform=ax.transAxes, ha="center",
@@ -149,7 +146,7 @@ def plot(out, stem="reproduce_weis_fig_6", skip=frozenset()):
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW, label=POREPY_LABEL))
     handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"warm: $T$ / liq. sat. (left)"),
                 Line2D([0], [0], color=ps.SCHEMES["hu"]["cool"], ls="-", lw=3, label=r"cool: $p$ / halite (right)"),
-                C.ref_legend_handle()]
+                C.ref_legend_handle(r"openCSMP ($\Delta x = 10$ m)", C.CSMP_STYLE)]
     fig.tight_layout()
     ps.bottom_legend(fig, handles, [h.get_label() for h in handles], ncol=4)
     ps.savefig(fig, stem, C.OUT_DIR)

@@ -3,7 +3,7 @@
 Each case is a 2 km column with fixed pressure, temperature and salinity at both ends and a
 linear initial pressure (condition 1). The openCSMP driver ``csmp_1d_column`` (built in the
 openCSMP repository) runs it with the CVFEM PHX scheme on 800 elements (dx = 2.5 m, as the PorePy
-runs); this script writes the configuration and run files, runs the cases one after another
+runs; the salt case on 200); this script writes the configuration and run files, runs the cases one after another
 and leaves the final profile as ``csmp_visualization/<case>/csmp_profile_1.csv``.
 
     python csmp_1d_solver.py                      # all ten cases
@@ -32,6 +32,10 @@ DT_INITIAL = 0.01         # [yr]
 DT_MAX = 1.0              # [yr], the paper's largest step
 DT_MIN = 1.0e-8           # [yr], failure guard
 CFL_SCALING = 0.1
+# Per-case overrides: pure water at dx = 2.5 m needs a smaller CFL factor; the salt case collapses on
+# dx = 2.5 m (vapor-halite lookup failure near 215 yr), so it runs on the Weis grid.
+CASE_CFL = {"fig_6_pw": 0.025}
+CASE_ELEMENTS = {"fig_6_salt": 200}
 ROCK = dict(permeability=1.0e-15, porosity=0.1, thermal_conductivity=2.0,
             density=2700.0, specific_heat_capacity=880.0, compressibility=1.0e-15)
 
@@ -54,7 +58,7 @@ CASES = {
 }
 
 
-def write_config(path: Path, case: tuple) -> None:
+def write_config(path: Path, case: tuple, cfl: float = CFL_SCALING) -> None:
     """openCSMP configuration: blocks are separated by exactly one blank line."""
     p_l, p_r, t_l, t_r, gravity, tf, extra = case
     p_l, p_r = p_l * 1.0e6, p_r * 1.0e6
@@ -81,7 +85,7 @@ nodal density rock\t\t{ROCK['density']:g}
 lithostatic pressure\t\t{p_r:g}
 nodal compressibility rock\t{ROCK['compressibility']:g}
 gravity flag\t\t\t{1.0 if gravity else 0.0:g}
-cfl scaling\t\t\t{CFL_SCALING:g}
+cfl scaling\t\t\t{cfl:g}
 open top\t\t\t0
 no standard output\t\t1
 thickness\t\t\t1.
@@ -128,17 +132,18 @@ def link_tables(tables: Path, run_dir: Path) -> int:
     return n
 
 
-def run_case(name: str, driver: Path, tables: Path, elements: int = ELEMENTS) -> int:
+def run_case(name: str, driver: Path, tables: Path, elements: int = ELEMENTS,
+             cfl: float = CFL_SCALING) -> int:
     case = CASES[name]
     run_dir = OUT / (name if elements == ELEMENTS else f"{name}_n{elements}")
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "run_complete.json").unlink(missing_ok=True)
-    write_config(run_dir / "csmp-configuration.txt", case)
+    write_config(run_dir / "csmp-configuration.txt", case, cfl)
     extra = case[6]
     run = [f"config {run_dir / 'csmp'}", f"output {run_dir / 'csmp'}",
            f"length {LENGTH:g}", f"elements {elements}", f"snap_years 0 {case[5]:g}",
            f"dt_initial {DT_INITIAL:g}", f"dt_max {DT_MAX:g}", f"dt_min {DT_MIN:g}",
-           "linear_rtol 1e-10", "linear_maxit 1000", f"cfl_scaling {CFL_SCALING:g}",
+           "linear_rtol 1e-10", "linear_maxit 1000", f"cfl_scaling {cfl:g}",
            f"rock_permeability {ROCK['permeability']:g}"]
     if "target_halite" in extra:
         run.append(f"target_halite {extra['target_halite']:g}")
@@ -178,8 +183,10 @@ def main() -> int:
     ap.add_argument("cases", nargs="*", help="case names (default: all)")
     ap.add_argument("--list", action="store_true", help="list the cases and stop")
     ap.add_argument("--csmp-exe", help="path to csmp_1d_column")
-    ap.add_argument("--elements", type=int, default=ELEMENTS,
-                    help=f"elements over the 2 km column (default {ELEMENTS}; Weis et al. 2014 use 200)")
+    ap.add_argument("--cfl-scaling", type=float,
+                    help=f"openCSMP CFL factor (default {CFL_SCALING:g}, or CASE_CFL)")
+    ap.add_argument("--elements", type=int,
+                    help=f"elements over the 2 km column (default {ELEMENTS}, or CASE_ELEMENTS)")
     ap.add_argument("--tables-dir", help="openCSMP lookup-table cache (default: next to the driver)")
     args = ap.parse_args()
     if args.list:
@@ -193,7 +200,9 @@ def main() -> int:
     tables = Path(args.tables_dir or os.environ.get("CSMP_TABLES_DIR")
                   or driver.parent / "example_inputs" / "CVFEM_examples")
     print(f"openCSMP driver: {driver}\noutput folder:   {OUT}")
-    failed = [n for n in names if run_case(n, driver, tables, args.elements) != 0]
+    failed = [n for n in names
+              if run_case(n, driver, tables, args.elements or CASE_ELEMENTS.get(n, ELEMENTS),
+                          args.cfl_scaling or CASE_CFL.get(n, CFL_SCALING)) != 0]
     if failed:
         print(f"failed: {failed}")
     return 1 if failed else 0
