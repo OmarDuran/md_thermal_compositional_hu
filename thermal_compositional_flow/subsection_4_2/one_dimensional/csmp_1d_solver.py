@@ -4,7 +4,7 @@ Each case is a 2 km column with fixed pressure, temperature and salinity at both
 linear initial pressure (condition 1). The openCSMP driver ``csmp_1d_column`` (built in the
 openCSMP repository) runs it with the CVFEM PHX scheme on 800 elements (dx = 2.5 m, as the PorePy
 runs; the salt case on 200); this script writes the configuration and run files, runs the cases one after another
-and leaves the final profile as ``csmp_visualization/<case>/csmp_profile_1.csv``.
+and leaves the final profile as ``opencsmp_data/one_dimensional/<case>/csmp_profile_1.csv``.
 
     python csmp_1d_solver.py                      # all ten cases
     python csmp_1d_solver.py fig_5_vertical       # selected cases
@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "csmp_visualization"
+OUT = HERE.parents[1] / "opencsmp_data" / "one_dimensional"   # read by fig_weis_common.csmp_ref
 YEAR = 365.0 * 86400.0
 
 LENGTH = 2000.0           # [m]
@@ -32,7 +32,7 @@ DT_INITIAL = 0.01         # [yr]
 DT_MAX = 1.0              # [yr], the paper's largest step
 DT_MIN = 1.0e-8           # [yr], failure guard
 CFL_SCALING = 0.1
-# Per-case overrides: pure water at dx = 2.5 m needs a smaller CFL factor; the salt case collapses on
+# Per-case overrides: pure water on 800 elements needs a smaller CFL factor; the salt case collapses on
 # dx = 2.5 m (vapor-halite lookup failure near 215 yr), so it runs on the Weis grid.
 CASE_CFL = {"fig_6_pw": 0.025}
 CASE_ELEMENTS = {"fig_6_salt": 200}
@@ -200,9 +200,12 @@ def main() -> int:
     tables = Path(args.tables_dir or os.environ.get("CSMP_TABLES_DIR")
                   or driver.parent / "example_inputs" / "CVFEM_examples")
     print(f"openCSMP driver: {driver}\noutput folder:   {OUT}")
-    failed = [n for n in names
-              if run_case(n, driver, tables, args.elements or CASE_ELEMENTS.get(n, ELEMENTS),
-                          args.cfl_scaling or CASE_CFL.get(n, CFL_SCALING)) != 0]
+    failed = []
+    for n in names:
+        elements = args.elements or CASE_ELEMENTS.get(n, ELEMENTS)
+        cfl = args.cfl_scaling or (CASE_CFL.get(n, CFL_SCALING) if elements == ELEMENTS else CFL_SCALING)
+        if run_case(n, driver, tables, elements, cfl) != 0:
+            failed.append(n)
     if failed:
         print(f"failed: {failed}")
     return 1 if failed else 0

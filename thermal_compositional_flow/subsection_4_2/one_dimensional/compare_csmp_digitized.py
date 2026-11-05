@@ -17,7 +17,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent.parent / "benchmark_figures_data"
-RUNS = HERE / "csmp_visualization"
+RUNS = HERE.parents[1] / "opencsmp_data" / "one_dimensional"
 
 # digitized-file suffix -> (profile column, scale to the digitized unit, label, unit)
 FIELDS = {

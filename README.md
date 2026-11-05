@@ -14,14 +14,15 @@ branch `buoyancy_flow_refactor`.
 | `run_subsection_4_1.sh checks` | monotonicity of the buoyant flux; reduction consistency for $N = 3, 4$ | `immiscible_multiphase_two_dimensional_flow/monotonicity.pdf`, `degenerate_equivalence.tex` |
 | `run_subsection_4_1.sh column` | passive-phase column, $\rho_\beta \in \{750, 1000, 1250\}$ kg/m³ | `.../column_segregation_passive_phase.pdf` |
 | `run_subsection_4_1.sh barriers` | $N$-phase segregation through barriers, fixed- and mixed-dimensional, HU and PPU | `.../comparison_saturation_maps_*.pdf` |
-| `run_subsection_4_2.sh weis1d` | H₂O–NaCl columns of Weis et al. (2014), Figures 14, B.16, B.17 | `weis_one_dimensional_flow/reproduce_weis_fig_{5,4,6}.pdf` |
-| `run_subsection_4_2.sh plume` | 2D plume, TPFA versus MPFA gravity, Figure 15 | `weis_two_dimensional_flow/fig10_gravity_comparison.pdf` |
-| `run_subsection_4_2.sh co2` | three-phase H₂O–CO₂ across conductive and blocking fractures, Figures 16, 17 | `co2_two_dimensional_flow/co2_{rho_h_contours,breakthrough}.pdf` |
-| `run_subsection_4_2.sh phz` | H₂O–CO₂ phase diagrams, Appendix B | `co2_two_dimensional_flow/co2_phz_diagrams.pdf` |
+| `run_subsection_4_2.sh weis1d` | H₂O–NaCl columns of Weis et al. (2014), Figures 10, B.13 | `weis_one_dimensional_flow/reproduce_weis_fig_{5,4,6}.pdf` |
+| `run_subsection_4_2.sh plume` | 2D plume, TPFA versus MPFA gravity, Figure 11 | `weis_two_dimensional_flow/fig10_gravity_comparison.pdf` |
+| `run_subsection_4_2.sh co2` | three-phase H₂O–CO₂ across conductive and blocking fractures, Figure 12 | `co2_two_dimensional_flow/co2_{rho_h_contours,breakthrough}.pdf` |
+| `run_subsection_4_2.sh phz` | H₂O–CO₂ phase diagrams, Figure B.15 | `co2_two_dimensional_flow/co2_phz_diagrams.pdf` |
 
 The final `collect` step copies the figures to `thermal_compositional_flow/paper_figures/` and the
-PorePy snapshots behind them to `benchmark_figures_data/porepy_vtks/`. The script
-`one_dimensional/csmp_1d_solver.py` runs the Weis et al. (2014) columns in openCSMP. The H₂O–NaCl
+PorePy snapshots behind them to `benchmark_figures_data/porepy_vtks/`. The openCSMP references
+come from `run_opencsmp.sh` (1D columns and the plume of Figure 11; `save` packs all its output
+into `opencsmp_data.tar.gz`), which must run before `run_subsection_4_2.sh weis1d`. The H₂O–NaCl
 error maps of Appendix B are produced by the table builder in `opensowat`.
 
 ## Running

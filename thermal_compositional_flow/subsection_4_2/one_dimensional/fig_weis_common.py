@@ -56,7 +56,8 @@ def ref_legend_handle(label=r"Weis et al.\ (2014)", style=None):
 
 
 CSMP_LABEL = "openCSMP"
-CSMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "csmp_visualization")
+# openCSMP output, written by csmp_1d_solver.py (run_opencsmp.sh)
+CSMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "opencsmp_data", "one_dimensional")
 _CSMP_COL = {"T": ("temperature_C", 1.0), "p": ("pressure_Pa", 1.0e-6),
              "s_liq": ("saturation_liquid", 1.0), "s_halite": ("saturation_halite", 1.0)}
 

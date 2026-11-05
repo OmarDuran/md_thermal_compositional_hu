@@ -18,6 +18,7 @@
 # figures and tables back to the host):
 #
 #    ./run_subsection_4_1.sh
+#    ./run_opencsmp.sh          # openCSMP references, before 4.2
 #    ./run_subsection_4_2.sh
 #
 # The full paper runs take about 9-10 hours per section, 48 hours or more in total.
@@ -52,7 +53,7 @@ RUN apt-get update && \
         pip install --no-cache-dir petsc petsc4py && \
     python -c "from petsc4py import PETSc; assert all(PETSc.Sys.hasExternalPackage(p) for p in ('mumps', 'hypre'))"
 
-# openCSMP (CSMP++, LGPL-3.0) runs the Weis et al. (2014) 1D benchmarks (csmp_1d_solver.py):
+# openCSMP (CSMP++, LGPL-3.0) runs the Weis et al. (2014) 1D benchmarks and the 2D plume (run_opencsmp.sh):
 # cloned at a pinned commit, patched with the column and plume drivers, built against the
 # PETSc above. The patched source, LICENSES/ and the fetched dependency sources stay in the
 # image; only the git history and the build intermediates are removed. The lookup tables
