@@ -12,6 +12,9 @@ writes its usual VTU/PVD output alongside (periodic snapshots).
 The two scheme knobs:
   HU    -> buoyancy_upwinding="hybrid", mass_mobility_weighted_permeability=False
   HU-mwp -> buoyancy_upwinding="hybrid", mass_mobility_weighted_permeability=True
+  PPU   -> phase-potential upwinding (ppu_upwinding.PhasePotentialUpwinding), total-mass form
+
+    python porepy_1d_solver.py [--scheme hu|ppu] [--case horizontal|vertical] [--no-cache]
 
 Run: ``python porepy_1d_solver.py`` (heavy -- vertical is 1000 yr / 8000 steps). Requires the PorePy
 environment.
@@ -50,6 +53,9 @@ from porepy.examples.geothermal_flow.model_configuration.geothermal_export impor
 )
 from porepy.examples.geothermal_flow.model_configuration.flow_model_base import (  # noqa: E501
     geothermal_nonlinear_solver,  # NewtonSolver that dispatches to model.solve_linear_system
+)
+from porepy.examples.geothermal_flow.model_configuration.ppu_upwinding import (  # noqa: E501
+    PhasePotentialUpwinding,      # genuine PPU: each phase upwinded by its own potential
 )
 from porepy.examples.geothermal_flow.obl_sampler import VTKSampler
 
@@ -135,15 +141,20 @@ def _attach_samplers(model, xph_name: str = None, xpt_name: str = None) -> None:
     model.obl_sampler_ptz = ptz
 
 
-def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True) -> dict:
+def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True,
+             ppu: bool = False, lag_directions: bool = False) -> dict:
     """Run one (orientation, scheme) case and pickle its converged 1D profile to ``_cache/``.
 
     ``weighted_perm=False`` -> HU (upwinded total mobility); ``True`` -> HU-mwp (mobility-weighted).
-    Both use ``buoyancy_upwinding='hybrid'``. Resumable: if ``cache`` and the target pickle already
+    Both use ``buoyancy_upwinding='hybrid'``; ``ppu=True`` (total-mass form only) runs phase-potential
+    upwinding on the same model instead. ``lag_directions=True`` freezes the upwind directions over
+    each time step at the previous converged state, as the standalone solver does. Resumable: if ``cache`` and the target pickle already
     exists it is loaded and the (heavy) run is skipped; delete the pickle (or pass ``cache=False``)
     to recompute. Returns the saved dict.
     """
-    scheme = "hu_mwp" if weighted_perm else "hu"
+    if ppu and weighted_perm:
+        raise ValueError("PPU requires the total-mass formulation (weighted_perm=False).")
+    scheme = "ppu" if ppu else ("hu_mwp" if weighted_perm else "hu")
     path = _pickle_path(geometry_case, scheme)
     if cache and os.path.exists(path):
         with open(path, "rb") as f:
@@ -170,7 +181,8 @@ def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True) -> dic
         "ad_backend": "native",
         "fractional_flow": weighted_perm,
         "enable_buoyancy_effects": True,
-        "buoyancy_upwinding": "hybrid",
+        "buoyancy_upwinding": "ppu" if ppu else "hybrid",
+        "lag_buoyancy_direction": lag_directions,
         "material_constants": {"solid": solid},
         "time_manager": time_manager,
         "times_to_export": times_to_export,
@@ -183,8 +195,9 @@ def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True) -> dic
     # HU-mwp uses the fractional-flow template, HU the standard one -- the discretisation distinction
     # is the base template, not a runtime parameter.
     FlowModel = DriesnerBrineFractionalFlowModel if weighted_perm else DriesnerBrineFlowModel
+    Upwinding = (PhasePotentialUpwinding,) if ppu else ()
 
-    class GeothermalWaterFlowModel(DriesnerPhaseExport, ModelGeometry, BC, IC, FlowModel):
+    class GeothermalWaterFlowModel(*Upwinding, DriesnerPhaseExport, ModelGeometry, BC, IC, FlowModel):
 
         def darcy_flux_discretization(self, subdomains: list[pp.Grid]) -> pp.ad.TpfaAd:
             return pp.ad.TpfaAd(self.darcy_keyword, subdomains, nd=self.nd)
@@ -258,19 +271,20 @@ FIG6_TABLES = {                                   # column -> (xph .vtr, xpt .vt
 }
 
 
-def _fig6_pickle_path(column: str) -> str:
-    return os.path.join(CACHE_DIR, f"fig6_porepy_{column}_hu_N{N_CELLS}_l{TABLE_LEVEL}.pkl")
+def _fig6_pickle_path(column: str, scheme: str = "hu") -> str:
+    return os.path.join(CACHE_DIR, f"fig6_porepy_{column}_{scheme}_N{N_CELLS}_l{TABLE_LEVEL}.pkl")
 
 
 def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEARS,
-                  write_pickle: bool = True) -> dict:
+                  write_pickle: bool = True, ppu: bool = False) -> dict:
     """Run the Weis (2014) Fig-6 HU case for ``column`` ('pw' pure water z=0, or 'salt' z_init=0.42
     with immobile halite), horizontal, tf=``tf_years`` (2000 yr), and pickle the converged 1D profile
     (y, T, p, s_liq, s_halite) to _cache/fig6_porepy_{column}_hu_N800_lgraded.pkl. Both columns sample
     the single graded OBL (z=0 slice for pw, z=salt_z for salt). Only the final VTU snapshot is exported."""
     if column not in FIG6_TABLES:
         raise ValueError(f"column must be one of {list(FIG6_TABLES)}")
-    path = _fig6_pickle_path(column)
+    scheme = "ppu" if ppu else "hu"
+    path = _fig6_pickle_path(column, scheme)
     if cache and os.path.exists(path):
         with open(path, "rb") as f:
             keep = pickle.load(f)
@@ -290,9 +304,9 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
                               thermal_conductivity=2.0 * TO_MEGA, density=2700.0,
                               specific_heat_capacity=880.0 * TO_MEGA)
     params = {
-        "folder_name": os.path.join(HERE, "visualization", f"fig6_{column}"),
+        "folder_name": os.path.join(HERE, "visualization", f"fig6_{column}" + ("_ppu" if ppu else "")),
         "ad_backend": "native", "fractional_flow": False, "enable_buoyancy_effects": True,
-        "buoyancy_upwinding": "hybrid", "material_constants": {"solid": solid},
+        "buoyancy_upwinding": "ppu" if ppu else "hybrid", "material_constants": {"solid": solid},
         "time_manager": time_manager, "times_to_export": [tf],       # final snapshot only (save disk)
         "use_petsc": False, "step_control_method": "LS",   # weis backtracking line search (all solvers)
         # thermal-overshoot postprocessing destabilises the strongly halite-forming salt column;
@@ -308,7 +322,9 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
         # The halite front stalls Newton with the row-scaled line-search merit; descend raw L2.
         params["line_search_merit"] = "l2"
 
-    class GeothermalWaterFlowModel(DriesnerPhaseExport, ModelGeometryH, BC_fig6, ICcls,
+    Upwinding = (PhasePotentialUpwinding,) if ppu else ()
+
+    class GeothermalWaterFlowModel(*Upwinding, DriesnerPhaseExport, ModelGeometryH, BC_fig6, ICcls,
                                    DriesnerBrineFlowModel):
         def darcy_flux_discretization(self, subdomains: list[pp.Grid]) -> pp.ad.TpfaAd:
             return pp.ad.TpfaAd(self.darcy_keyword, subdomains, nd=self.nd)
@@ -351,7 +367,7 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
     o = np.argsort(y)
     stats = model.collect_run_stats()
     keep = {"y": y[o], "T": T[o], "p": p[o], "s_liq": s_liq[o], "s_halite": s_halite[o],
-            "column": column, "scheme": "hu", "n_cells": int(sd.num_cells),
+            "column": column, "scheme": scheme, "n_cells": int(sd.num_cells),
             "n_steps": stats.n_accepted_steps, "total_it": stats.total_newton_iterations,
             "n_time_step_cuts": stats.n_time_step_cuts, "level": TABLE_LEVEL}
     if write_pickle:
@@ -363,9 +379,16 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
 
 
 def main() -> None:
-    for geometry_case in ["horizontal","vertical"]:
-        for weighted_perm in [False]:
-            run_case(geometry_case, weighted_perm)
+    import argparse
+    ap = argparse.ArgumentParser(description="PorePy 1D Weis benchmark (Fig. 5).")
+    ap.add_argument("--scheme", default="hu", choices=["hu", "ppu"])
+    ap.add_argument("--case", default=None, choices=["horizontal", "vertical"],
+                    help="one orientation (default: both)")
+    ap.add_argument("--no-cache", action="store_true", help="recompute even if a pickle exists")
+    args = ap.parse_args()
+    cases = [args.case] if args.case else ["horizontal", "vertical"]
+    for geometry_case in cases:
+        run_case(geometry_case, False, cache=not args.no_cache, ppu=args.scheme == "ppu")
 
 
 if __name__ == "__main__":

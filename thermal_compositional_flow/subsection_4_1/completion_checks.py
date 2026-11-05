@@ -363,7 +363,7 @@ def check_monotonicity_porepy(quick: bool = False) -> dict:
     handles = ([Line2D([], [], color=c, lw=2, label=label) for label, c, *_ in cases]
                + [Line2D([], [], color="0.35", ls="-", marker="o", ms=4, label="primary cell"),
                   Line2D([], [], color="0.35", ls="--", marker="x", ms=4,
-                         label="opposite cell across face")])
+                         label="opposite cell")])
     fig.legend(handles=handles, loc="lower center", ncol=5, fontsize=8, frameon=False,
                bbox_to_anchor=(0.5, -0.02))
 

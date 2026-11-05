@@ -63,6 +63,9 @@ from porepy.examples.geothermal_flow.model_configuration.flow_model_base import 
     geothermal_nonlinear_solver,  # NewtonSolver that dispatches to model.solve_linear_system
     assembled_equation_indices,   # compat shim for the removed EquationSystem attribute
 )
+from porepy.examples.geothermal_flow.model_configuration.ppu_upwinding import (  # noqa: E402,E501
+    PhasePotentialUpwinding,    # genuine PPU: each phase upwinded by its own potential
+)
 from porepy.examples.geothermal_flow.model_configuration.geometry_description.geometry_market import (  # noqa: E402,E501
     GeometryBarriers2D,
     _BARRIER_LAYERS_FIG,
@@ -1531,6 +1534,11 @@ class FractionalFlowModel(_FlowModelBody, FractionalFlowModelBase):
     :class:`_FlowModelBody`)."""
 
 
+class PPUFlowModel(PhasePotentialUpwinding, FlowModel):
+    """``--scheme ppu`` -- phase-potential upwinding in the total-mass formulation, for a
+    like-for-like comparison with ``hu`` (same model, grid and time stepping)."""
+
+
 # --------------------------------------------------------------------------------------- #
 #  Run configuration (module level), mirroring tp_tc_gravitational_segregation.py
 # --------------------------------------------------------------------------------------- #
@@ -1606,6 +1614,7 @@ solid_constants = pp.SolidConstants(
 _SCHEME_CONFIG = {
     "hu":    dict(fractional_flow=False, buoyancy_upwinding="hybrid"),
     "hu-mw": dict(fractional_flow=True,  buoyancy_upwinding="hybrid"),
+    "ppu":   dict(fractional_flow=False, buoyancy_upwinding="ppu"),
 }
 
 
@@ -1617,6 +1626,8 @@ def flow_model_class(params: dict):
     ``FractionalFlowModelBase`` (``CompositionalFractionalFlowTemplate``), while ``False`` (hu) uses
     ``FlowModelBase`` (``CompositionalFlowTemplate``).  Both carry the identical
     :class:`_FlowModelBody` mixin stack, so only the template differs."""
+    if params.get("buoyancy_upwinding") == "ppu":
+        return PPUFlowModel
     return FractionalFlowModel if params.get("fractional_flow", False) else FlowModel
 
 
