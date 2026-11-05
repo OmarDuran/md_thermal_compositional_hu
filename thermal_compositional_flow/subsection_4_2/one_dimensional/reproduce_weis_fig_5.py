@@ -1,7 +1,7 @@
 """Weis (2014) Figure 5 -- two-phase, pure water. 2x2 panels: columns {horizontal 200 yr,
-vertical 1000 yr}, rows {temperature+pressure, liquid saturation}. The single weis brine engine at
-z=0 (``weis_1d_solver.run_brine(**FIG5)``) for PPU / HU / HU-mwp, overlaid on the openCSMP
-reference (csmp_1d_solver.py). The heavy N=800 runs are cached in ``_cache/`` (delete to recompute).
+vertical 1000 yr}, rows {temperature+pressure, liquid saturation}. PorePy PPU and HU
+(porepy_1d_solver.py) overlaid on the openCSMP reference (csmp_1d_solver.py). The heavy N=800 runs
+are cached in ``_cache/`` (delete to recompute).
 
     python reproduce_weis_fig_5.py            # compute (or load cache) + render figures/reproduce_weis_fig_5
 """
@@ -28,6 +28,8 @@ CSMP_COARSE_LABEL = r"openCSMP ($\Delta x = 10$ m)"
 # agreement (or drift) reads directly.
 POREPY_C = "black"
 POREPY_LABEL = r"HU-PorePy"
+PPU_POREPY_LABEL = r"PPU-PorePy"      # PorePy PPU replaces the standalone PPU (same model as HU-PorePy)
+DEFAULT_SKIP = "ppu,hu,hu-mwp"        # no standalone curves; PorePy HU/PPU vs openCSMP only
 # If a porepy overlay pickle is missing, run porepy_1d_solver to generate it (so one `python
 # reproduce_weis_fig_5.py` produces the porepy data AND the figure). HEAVY -- the PorePy solve is minutes
 # per case (vertical is 1000 yr). Set False to only plot porepy caches that already exist.
@@ -48,7 +50,7 @@ def _load_porepy(case, scheme="hu", N=N):
                 print(f"[fig5] porepy overlay cache missing for {case}/{scheme} -- running "
                       f"porepy_1d_solver.run_case (heavy: PorePy solve) ...", flush=True)
                 C.run_in_own_process("import porepy_1d_solver as P; P.run_case("
-                                     f"{case!r}, weighted_perm={scheme == 'hu_mwp'})")  # writes the same pickle path
+                                     f"{case!r}, weighted_perm={scheme == 'hu-mwp'}, ppu={scheme == 'ppu'})")  # writes the same pickle path
             else:
                 print(f"[fig5] porepy overlay skipped for {case}/{scheme}: fig N={N} "
                       f"!= porepy_1d_solver N={pp1d.N_CELLS}", flush=True)
@@ -82,6 +84,9 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
         ax_tp, ax_s = axes[0, j], axes[1, j]
         ax_p = ax_tp.twinx(); ax_p.grid(False)
         res = {sk: out[(sk, case)] for sk in ps.SCHEMES if (sk, case) in out}
+        ppu_pp = _load_porepy(case, "ppu")                   # PorePy PPU, drawn in the PPU style
+        if ppu_pp is not None:
+            res["ppu"] = ppu_pp
         panels.append(res)
         C.draw_tp(ax_tp, ax_p, res,
                   ref_T=C.csmp_ref(f"fig_5_{case}", "T"),
@@ -122,7 +127,11 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
 
     # single bottom legend: scheme colours (names only) + the T/p and reference key. Per-case
     # iteration counts live in each panel's small legend (they differ by orientation).
-    handles = C.scheme_handles(only=C.active_schemes(skip))
+    drawn = set().union(*panels)
+    handles = C.scheme_handles(only=[sk for sk in ps.SCHEMES if sk in drawn])
+    for h in handles:
+        if h.get_label() == ps.SCHEMES["ppu"]["label"]:
+            h.set_label(PPU_POREPY_LABEL)
     handles.append(Line2D([0], [0], color=ps.CSMP_COARSE["warm"], ls=ps.CSMP_COARSE["dash"], lw=ps.CURVE_LW, label=CSMP_COARSE_LABEL))
     if has_pp:                                          # key the overlay only when it was actually drawn
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW, label=POREPY_LABEL))
@@ -137,7 +146,7 @@ def plot(out, stem="reproduce_weis_fig_5", skip=frozenset()):
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Weis (2014) Fig 5 (two-phase pure water).")
-    ap.add_argument("--skip-solver", default="", dest="skip",
+    ap.add_argument("--skip-solver", default=DEFAULT_SKIP, dest="skip",
                     help="comma-separated solvers to skip: ppu, hu, hu-mwp, hu-porepy")
     args = ap.parse_args(argv)
     skip = C.parse_skip(args.skip)

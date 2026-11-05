@@ -471,7 +471,7 @@ def comparison_saturation_maps_fixed_dim(n, days, out_dir):
                         cmap=cm, vmin=0.0, vmax=dmax, interpolation="nearest")
         PR._overlay_barriers(ax, barrier, 100, 100)
         PR._style_axes(ax, f"$t = {int(round(day))}$ days")
-    axes[0][0].set_ylabel(_it_label("PPU (independent)", _hamon_it(_hamon_vtr_dir(n))), fontsize=12)
+    axes[0][0].set_ylabel(_it_label("PPU (PorePy)", _hamon_it(_hamon_vtr_dir(n))), fontsize=12)
     axes[1][0].set_ylabel(_it_label("HU (PorePy)", _pp_it(_case_dir(n, False))), fontsize=12)
     axes[2][0].set_ylabel(
         r"$|\rho_{\mathrm{PPU}}-\rho_{\mathrm{HU}\,(\mathrm{PorePy})}| \,/\, \|\rho_{\mathrm{PPU}}\|$",
@@ -550,7 +550,7 @@ def comparison_saturation_maps_mixed_dim(n, days, out_dir):
                         cmap=cm, vmin=0.0, vmax=dmax, interpolation="nearest")
         PR._overlay_barriers(ax, barrier, 100, 100)
         PR._style_axes(ax, f"$t = {int(round(day))}$ days")
-    axes[0][0].set_ylabel(_it_label("PPU (equi-dim.)", _hamon_it(frac_dir)), fontsize=12)
+    axes[0][0].set_ylabel(_it_label("PPU (PorePy, md)", _hamon_it(frac_dir)), fontsize=12)
     axes[1][0].set_ylabel(_it_label("HU (PorePy, md)", _pp_it(_case_dir(n, True))), fontsize=12)
     axes[2][0].set_ylabel(
         r"$|\rho_{\mathrm{PPU}}-\rho_{\mathrm{HU}\,(\mathrm{PorePy})}| \,/\, \|\rho_{\mathrm{PPU}}\|$",

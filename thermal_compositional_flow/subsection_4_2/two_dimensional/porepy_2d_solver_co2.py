@@ -39,6 +39,7 @@ from porepy.examples.geothermal_flow.model_configuration.flow_model_base import 
     geothermal_nonlinear_solver,
 )
 from porepy.examples.geothermal_flow.model_configuration.geothermal_export import DriesnerPhaseExport
+from porepy.examples.geothermal_flow.model_configuration.ppu_upwinding import PhasePotentialUpwinding
 from porepy.examples.geothermal_flow.obl_sampler import VTKSampler
 
 to_Mega = 1.0e-6
@@ -80,6 +81,7 @@ _FRAC_APERTURE = 0.01                          # m, fracture aperture (tunable m
 _SCHEME_CONFIG = {
     "hu":    dict(fractional_flow=False, buoyancy_upwinding="hybrid"),
     "hu-mw": dict(fractional_flow=True,  buoyancy_upwinding="hybrid"),
+    "ppu":   dict(fractional_flow=False, buoyancy_upwinding="ppu"),
 }
 
 
@@ -269,7 +271,7 @@ _ap = argparse.ArgumentParser(description="H2O-CO2 crossing the three-phase regi
 _ap.add_argument("--case", choices=["inject", "blowdown"], default="inject",
                  help="inject: water IC, CO2 injected bottom 8 MPa -> top outlet 4.5 MPa (flow-through); "
                       "blowdown: pre-charged block depressurized at the bottom")
-_ap.add_argument("--scheme", choices=["hu", "hu-mw"], default="hu")
+_ap.add_argument("--scheme", choices=["hu", "hu-mw", "ppu"], default="hu")
 _ap.add_argument("--cell-size", type=float, default=0.5, help="cell size [m] (0.5 -> 20x20)")
 _ap.add_argument("--tf", type=float, default=1.0, help="final time [days]")
 _ap.add_argument("--dt-init", type=float, default=1.0e-5, help="initial time step [days] (~0.86 s)")
@@ -348,6 +350,11 @@ params = {
 params.update(_SCHEME_CONFIG[_args.scheme])
 
 FlowModel = CO2FractionalFlowModel if params["fractional_flow"] else CO2FlowModel
+if params["buoyancy_upwinding"] == "ppu":
+    # Phase-potential upwinding, same flags as hu; only the upwinding differs.
+    class CO2PPUFlowModel(PhasePotentialUpwinding, CO2FlowModel):
+        pass
+    FlowModel = CO2PPUFlowModel
 
 BC = BCinject if _args.case == "inject" else BCblowdown
 IC = ICinject if _args.case == "inject" else ICblowdown

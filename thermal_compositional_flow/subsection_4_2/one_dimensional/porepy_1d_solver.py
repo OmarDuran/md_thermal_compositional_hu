@@ -4,7 +4,7 @@ Runs the four cases needed by the figure overlays -- {horizontal, vertical} x {H
 geometry's native N=800 and nominal dt = 0.25 yr, graded Driesner OBL tables (matching weis_1d_solver),
 and writes each converged 1D profile (distance, T, p, s_liq) extracted from the live model to
 
-    _cache/fig5_porepy_{case}_{scheme}_N800_l<level>.pkl
+    _cache/fig5_porepy_{case}_{scheme}_N800_l<level>.pkl  (scheme = hu, hu-mwp or ppu)
 
 with keys y[m], T[K], p[Pa], s_liq -- exactly what plot_style.to_plot_units consumes. PorePy still
 writes its usual VTU/PVD output alongside (periodic snapshots).
@@ -14,7 +14,7 @@ The two scheme knobs:
   HU-mwp -> buoyancy_upwinding="hybrid", mass_mobility_weighted_permeability=True
   PPU   -> phase-potential upwinding (ppu_upwinding.PhasePotentialUpwinding), total-mass form
 
-    python porepy_1d_solver.py [--scheme hu|ppu] [--case horizontal|vertical] [--no-cache]
+    python porepy_1d_solver.py [--scheme hu|hu-mwp|ppu] [--case horizontal|vertical] [--no-cache]
 
 Run: ``python porepy_1d_solver.py`` (heavy -- vertical is 1000 yr / 8000 steps). Requires the PorePy
 environment.
@@ -154,7 +154,7 @@ def run_case(geometry_case: str, weighted_perm: bool, cache: bool = True,
     """
     if ppu and weighted_perm:
         raise ValueError("PPU requires the total-mass formulation (weighted_perm=False).")
-    scheme = "ppu" if ppu else ("hu_mwp" if weighted_perm else "hu")
+    scheme = "ppu" if ppu else ("hu-mwp" if weighted_perm else "hu")
     path = _pickle_path(geometry_case, scheme)
     if cache and os.path.exists(path):
         with open(path, "rb") as f:
@@ -381,14 +381,15 @@ def run_fig6_case(column: str, cache: bool = True, tf_years: float = FIG6_TF_YEA
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="PorePy 1D Weis benchmark (Fig. 5).")
-    ap.add_argument("--scheme", default="hu", choices=["hu", "ppu"])
+    ap.add_argument("--scheme", default="hu", choices=["hu", "hu-mwp", "ppu"])
     ap.add_argument("--case", default=None, choices=["horizontal", "vertical"],
                     help="one orientation (default: both)")
     ap.add_argument("--no-cache", action="store_true", help="recompute even if a pickle exists")
     args = ap.parse_args()
     cases = [args.case] if args.case else ["horizontal", "vertical"]
     for geometry_case in cases:
-        run_case(geometry_case, False, cache=not args.no_cache, ppu=args.scheme == "ppu")
+        run_case(geometry_case, args.scheme == "hu-mwp", cache=not args.no_cache,
+                 ppu=args.scheme == "ppu")
 
 
 if __name__ == "__main__":

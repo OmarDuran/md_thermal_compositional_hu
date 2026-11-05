@@ -112,9 +112,16 @@ class ColumnPPUFlowModel(_ColumnOverrides, base.PPUFlowModel):
     """PPU on the column."""
 
 
+def run_suffix(constant_dt: bool, dt_days: float, nl_tol: float) -> str:
+    """File-name tag for non-default runs (empty for the default adaptive, tol 1e-4 run)."""
+    tag = f"_cdt{dt_days:g}" if constant_dt else ""
+    return tag + (f"_tol{nl_tol:.0e}" if nl_tol != 1.0e-4 else "")
+
+
 def run_case(rho_beta: float, scheme: str, *, ny: int = 100, perm_factor: float = 10.0,
              t_end_days: float = 60.0, dt_init_days: float = 0.05, dt_max_days: float = 0.25,
-             out_root: str = "visualization_column") -> dict:
+             out_root: str = "visualization_column", constant_dt: bool = False,
+             nl_tol: float = 1.0e-4) -> dict:
     """Run one column to ``t_end_days``; return the s_beta(y, t) history and solver counts."""
     k_rock = base.k_rock * perm_factor
     solid = pp.SolidConstants(
@@ -122,13 +129,21 @@ def run_case(rho_beta: float, scheme: str, *, ny: int = 100, perm_factor: float 
         density=2500.0, specific_heat_capacity=base.C_P,
         residual_aperture=base.FRACTURE_APERTURE,
     )
-    tag = f"{scheme}_{int(round(rho_beta))}_ny{ny}"
+    tag = f"{scheme}_{int(round(rho_beta))}_ny{ny}" + run_suffix(constant_dt, dt_max_days, nl_tol)
     params = base.build_params(
         3, scheme, t_end_days=t_end_days, dt_init_days=dt_init_days, dt_max_days=dt_max_days,
         snap_days=(0.0, t_end_days), fractures=False, ny=ny,
         material_constants={"solid": solid},
         folder_name=os.path.join(out_root, f"col_{tag}"), file_name=f"col_{tag}",
     )
+    if constant_dt:
+        # Ramp from dt_init (doubling) to dt_max, then hold dt_max: dt only shrinks on a failed step.
+        day = 86400.0
+        params["time_manager"] = pp.TimeManager(
+            schedule=[0.0, t_end_days * day], dt_init=dt_init_days * day, constant_dt=False,
+            dt_min_max=(dt_max_days * day / 64.0, dt_max_days * day),
+            iter_optimal_range=(13, 13), iter_relax_factors=(0.5, 2.0),
+            recomp_factor=0.5, recomp_max=8)
     # The middle-phase density of this case (read by the EOS and the z -> s inversion).
     base.RHO = np.array([RHO_A, float(rho_beta), RHO_G])
     base.RHO_BANDS = base.RHO.copy()
@@ -140,7 +155,7 @@ def run_case(rho_beta: float, scheme: str, *, ny: int = 100, perm_factor: float 
     solver_params = {
         "nl_convergence_criteria": {
             "res_abs": pp.solvers.ResidualBasedAbsoluteCriterion(
-                tol=1.0e-4, metric=pp.EquationBasedLebesgueMetric(model)),
+                tol=nl_tol, metric=pp.EquationBasedLebesgueMetric(model)),
             "null_drift": base.NullSpaceDriftCriterion(model, tol=drift_tol),
         },
         "nl_divergence_criteria": {
@@ -242,6 +257,8 @@ def main() -> None:
     ap.add_argument("--cases", nargs="+", default=list(CASES), choices=list(CASES))
     ap.add_argument("--schemes", nargs="+", default=list(SCHEMES), choices=list(SCHEMES))
     ap.add_argument("--out", default=os.path.join(HERE, "passive_phase_example"))
+    ap.add_argument("--constant-dt", action="store_true", help="ramp from --dt-init-days to --dt-max-days, then hold it")
+    ap.add_argument("--tol", type=float, default=1.0e-4, help="Newton residual tolerance")
     args = ap.parse_args()
 
     print(f"=== PorePy column segregation: ny={args.ny} (dy={LY / args.ny:g} m), "
@@ -253,8 +270,9 @@ def main() -> None:
             results[lab][scheme] = run_case(
                 CASES[lab], scheme, ny=args.ny, perm_factor=args.perm_factor,
                 t_end_days=args.t_end_days, dt_init_days=args.dt_init_days,
-                dt_max_days=args.dt_max_days)
-    if set(args.schemes) == set(SCHEMES) and set(args.cases) == set(CASES):
+                dt_max_days=args.dt_max_days, constant_dt=args.constant_dt, nl_tol=args.tol)
+    if (set(args.schemes) == set(SCHEMES) and set(args.cases) == set(CASES)
+            and not run_suffix(args.constant_dt, args.dt_max_days, args.tol)):
         make_figure(results, args.out, args.ny, args.t_end_days, args.perm_factor)
 
 

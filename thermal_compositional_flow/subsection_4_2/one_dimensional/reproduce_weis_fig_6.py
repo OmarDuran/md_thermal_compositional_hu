@@ -1,6 +1,6 @@
 """Weis (2014) Figure 6 -- H2O-NaCl, horizontal column, 2000 yr. 2x2 panels: columns {pure water
 z=0, salt + immobile halite z>0}, rows {temperature+pressure, liquid(+halite) saturation}. The
-single weis brine engine for PPU / HU / HU-mwp, both columns sampling the graded OBL (z=0 slice for
+PorePy HU (and PPU once its runs exist), both columns sampling the graded OBL (z=0 slice for
 pure water, z=salt_z for salt). The openCSMP reference (csmp_1d_solver.py) is overlaid on the Weis
 grid (dx = 10 m). If the salt column fails to converge it is drawn as a placeholder, so the figure always
 renders.
@@ -31,6 +31,8 @@ POREPY_C = "#0b2e6f"          # deep navy overlay, drawn as a dash-dot line (cle
 POREPY_LS = (0, (7, 3, 1.5, 3))   # dash-dot-dash pattern for the PorePy curve
 POREPY_LABEL = r"HU-PorePy"
 AUTORUN_POREPY = True         # generate a missing overlay pickle by running PorePy (heavy: 2000 yr)
+PPU_POREPY_LABEL = r"PPU-PorePy"
+DEFAULT_SKIP = "ppu,hu,hu-mwp"  # no standalone curves
 
 
 def _load_porepy(column):
@@ -55,6 +57,30 @@ def _load_porepy(column):
     d["p"] = d["p"] * 1.0e6                                # MPa (PorePy native) -> Pa (SI, as weis)
     print(f"[fig6-porepy] ({column!r})   cached total_it={int(d.get('total_it', 0))}", flush=True)
     return d
+
+
+def _load_ppu_porepy(path):
+    """PorePy PPU pickle at ``path`` (p in MPa -> Pa), or None until that run exists."""
+    import pickle
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        d = dict(pickle.load(f))
+    d["p"] = d["p"] * 1.0e6
+    if "y" not in d:                                       # fig-4 pickles store x
+        d["y"] = d["x"]
+    print(f"[ppu-porepy] {os.path.basename(path)}   cached total_it={int(d.get('total_it', 0))}", flush=True)
+    return d
+
+
+def _scheme_handles(panels):
+    """Legend handles for the schemes actually drawn; PPU is labelled PPU-PorePy."""
+    drawn = set().union(*panels) if panels else set()
+    handles = C.scheme_handles(only=[sk for sk in ps.SCHEMES if sk in drawn])
+    for h in handles:
+        if h.get_label() == ps.SCHEMES["ppu"]["label"]:
+            h.set_label(PPU_POREPY_LABEL)
+    return handles
 
 
 def compute(N=N, salt_z=SALT_Z, parallel=True, skip=frozenset()):
@@ -85,10 +111,16 @@ def plot(out, stem="reproduce_weis_fig_6", skip=frozenset()):
     fig, axes = plt.subplots(2, 2, figsize=(ps.TEXTWIDTH_IN, 5.4), sharex="col")
     tags = (("(a)", "(b)"), ("(c)", "(d)"))
     has_pp = False                                       # True once a PorePy overlay is actually drawn
+    panels = []
     for j, (col, title) in enumerate(COLS):
         ax_tp, ax_s = axes[0, j], axes[1, j]
         ax_p = ax_tp.twinx(); ax_p.grid(False)
-        res = out[col]
+        res = dict(out[col] or {})
+        ppu_pp = _load_ppu_porepy(os.path.join(
+            C.CACHE_DIR, f"fig6_porepy_{col}_ppu_N800_l{m.TABLE_LEVEL}.pkl"))
+        if ppu_pp is not None:                              # PorePy PPU, drawn in the PPU style
+            res["ppu"] = ppu_pp
+        panels.append(res)
         ax_tp.set_title(fr"\textbf{{{title} ({int(TF)} yr)}}")   # e.g. "Water (2000 yr)", all bold
         ax_tp.set_xlim(0.0, 2.0)
         ps.panel_tag(ax_tp, tags[0][j], loc=(0.04, 0.09), va="bottom")
@@ -141,7 +173,7 @@ def plot(out, stem="reproduce_weis_fig_6", skip=frozenset()):
                 ax_h.tick_params(axis="y", colors=C.WEIS_P)
         ax_s.set_xlabel(ps.DIST_LABEL)
 
-    handles = C.scheme_handles(only=C.active_schemes(skip))
+    handles = _scheme_handles(panels)
     if has_pp:                                          # key the overlay only when it was actually drawn
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW, label=POREPY_LABEL))
     handles += [Line2D([0], [0], color=ps.SCHEMES["hu"]["warm"], ls="-", lw=3, label=r"warm: $T$ / liq. sat. (left)"),
@@ -162,7 +194,7 @@ def main(argv=None):
     ap.add_argument("--halite-perm", choices=["A", "B"], default=m.HALITE_PERM_OPTION, dest="halite_perm",
                     help="halite->flow convention: A = p.349 rel-perm (k_rl+k_rv=1-S_h); "
                          "B = Eq 28 abs-perm (k=k0(1-S_h)^2). Weis Fig 6 used B (default %(default)s).")
-    ap.add_argument("--skip-solver", default="", dest="skip",
+    ap.add_argument("--skip-solver", default=DEFAULT_SKIP, dest="skip",
                     help="comma-separated solvers to skip (avoid expensive sweeps): ppu, hu, hu-mwp, hu-porepy")
     args = ap.parse_args(argv)
     os.environ["WEIS_HALITE_PERM"] = args.halite_perm   # spawned parallel-sweep workers read this at import

@@ -47,6 +47,7 @@ from porepy.examples.geothermal_flow.model_configuration.ic_description.ic_marke
     IC_single_phase_moderate_pressure as IC_mP,
 )
 from porepy.examples.geothermal_flow.obl_sampler import VTKSampler
+from porepy.examples.geothermal_flow.model_configuration.ppu_upwinding import PhasePotentialUpwinding
 
 # --------------------------------------------------------------------------------------- #
 #  Weis et al. (2014) Fig. 4: six single-phase heating fronts -- {hP, mP, lP} x
@@ -88,16 +89,17 @@ def _attach_samplers(model) -> None:
     model.obl_sampler_ptz = ptz
 
 
-def _cache_path(case_name, geometry_case):
+def _cache_path(case_name, geometry_case, ppu=False):
+    tag = "_ppu" if ppu else ""
     return os.path.join(CACHE_DIR,
-                        f"fig4_porepy_{case_name}_{geometry_case}_l{TABLE_LEVEL}.pkl")
+                        f"fig4_porepy_{case_name}_{geometry_case}{tag}_l{TABLE_LEVEL}.pkl")
 
 
-def run_case(case_name: str, geometry_case: str, cache: bool = True) -> dict:
+def run_case(case_name: str, geometry_case: str, cache: bool = True, ppu: bool = False) -> dict:
     """Run one Fig.-4 case to its snapshot instant and pickle the final (x, T, p) profile.
 
     Resumable: with ``cache`` the existing pickle is returned without re-running."""
-    path = _cache_path(case_name, geometry_case)
+    path = _cache_path(case_name, geometry_case, ppu)
     if cache and os.path.exists(path):
         with open(path, "rb") as f:
             return pickle.load(f)
@@ -114,7 +116,7 @@ def run_case(case_name: str, geometry_case: str, cache: bool = True) -> dict:
                               specific_heat_capacity=880.0 * TO_MEGA)
     params = {
         "folder_name": os.path.join(HERE, "single_phase_visualization",
-                                    f"{case_name}_{geometry_case}"),
+                                    f"{case_name}_{geometry_case}" + ("_ppu" if ppu else "")),
         "fractional_flow": False,      # HU (standard form), matching fig 5/6; was True (FF) -> now == HU
         "slave_eliminated_secondaries": True,   # weis-faithful exact flash each iteration (all solvers)
         "step_control_method": "LS",            # weis backtracking line search (all solvers); dormant here
@@ -127,8 +129,12 @@ def run_case(case_name: str, geometry_case: str, cache: bool = True) -> dict:
         "apply_schur_complement_reduction": False,
         "use_petsc": False,      # direct solver, matching fig 5/6
     }
+    if ppu:                      # phase-potential upwinding, all other flags as HU
+        params["buoyancy_upwinding"] = "ppu"
 
-    class GeothermalWaterFlowModel(ModelGeometry, BC, IC, FlowModel):
+    Base = type("PPUFlowModel", (PhasePotentialUpwinding, FlowModel), {}) if ppu else FlowModel
+
+    class GeothermalWaterFlowModel(ModelGeometry, BC, IC, Base):
         pass
 
     model = GeothermalWaterFlowModel(params)
@@ -173,9 +179,10 @@ if __name__ == "__main__":
                     "instants; final profiles pickled to _cache/.")
     ap.add_argument("--case", default="all", choices=[*CASES, "all"])
     ap.add_argument("--geometry", default="all", choices=[*GEOMETRIES, "all"])
+    ap.add_argument("--scheme", default="hu", choices=["hu", "ppu"])
     ap.add_argument("--no-cache", action="store_true",
                     help="re-run even when a cached profile exists")
     a = ap.parse_args()
     for c in (list(CASES) if a.case == "all" else [a.case]):
         for g in (list(GEOMETRIES) if a.geometry == "all" else [a.geometry]):
-            run_case(c, g, cache=not a.no_cache)
+            run_case(c, g, cache=not a.no_cache, ppu=a.scheme == "ppu")

@@ -1793,6 +1793,9 @@ if __name__ == "__main__":
                          f"exceeded, floor is dt-max/64")
     ap.add_argument("--constant-dt", action="store_true",
                     help="pure constant march at --dt-days (else reject-and-halve adaptive)")
+    ap.add_argument("--aperture", type=float, default=None, metavar="M",
+                    help="fracture aperture [m] (default %g); tagged into the output folder"
+                         % FRACTURE_APERTURE)
     ap.add_argument("--md", action="store_true",
                     help="mixed-dimensional: add 10 conductive fractures (k*%g), conforming to the "
                          "mesh: 5 vertical crossing the barriers, 5 horizontal in barrier-free bands"
@@ -1831,6 +1834,11 @@ if __name__ == "__main__":
         cpr_rtol=args.cpr_rtol, cpr_maxit=args.cpr_maxit,
         cpr_accuracy_tol=args.cpr_accuracy_tol,
         slave_eliminated_secondaries=args.slave_secondaries)
+    if args.aperture is not None:                       # same rock, different fracture aperture
+        params["material_constants"] = {"solid": pp.SolidConstants(
+            permeability=k_rock, porosity=porosity, thermal_conductivity=2.0 * to_Mega,
+            density=2500.0, specific_heat_capacity=C_P, residual_aperture=args.aperture)}
+        params["folder_name"] += f"_a{args.aperture:g}"
     # hu -> CompositionalFlowTemplate; hu-mw -> CompositionalFractionalFlowTemplate.
     model = flow_model_class(params)(params)
     # Per-step total-mass-drift budget: the target order split over the planned number of

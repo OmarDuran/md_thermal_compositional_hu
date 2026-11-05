@@ -1,7 +1,7 @@
 """Weis (2014) Figure 4 -- single-phase heating fronts. 3x2 panels: rows {high, moderate, low}
 pressure (hP/mP/lP), columns {horizontal, vertical}, each showing temperature (red, left axis) and
-pressure (blue, right axis) vs distance. The single weis brine engine at z=0 for PPU / HU / HU-mwp,
-overlaid on the openCSMP reference (csmp_1d_solver.py). Each panel has its own BC preset and final time; the heavy
+pressure (blue, right axis) vs distance. PorePy HU (and PPU once its runs exist) overlaid on the
+openCSMP reference (csmp_1d_solver.py). Each panel has its own BC preset and final time; the heavy
 N=800 runs are cached in ``_cache/`` (some are 1500 yr).
 
     python reproduce_weis_fig_4.py            # compute (or load cache) + render figures/reproduce_weis_fig_4
@@ -46,6 +46,8 @@ ORIENTS = ("horizontal", "vertical")
 POREPY_C = "black"
 POREPY_LABEL = r"HU-PorePy"
 AUTORUN_POREPY = True                          # generate a missing overlay pickle by running PorePy
+PPU_POREPY_LABEL = r"PPU-PorePy"
+DEFAULT_SKIP = "ppu,hu,hu-mwp"                 # no standalone curves
 _PP_CASE = {"hp": "case_hP", "mp": "case_mP", "lp": "case_lP"}   # Fig-4 level -> single-phase case name
 
 
@@ -74,6 +76,30 @@ def _load_porepy(lvl, orient):
     return {"y": d["x"], "T": d["T"], "p": d["p"] * 1.0e6, "total_it": d.get("total_it")}
 
 
+def _load_ppu_porepy(path):
+    """PorePy PPU pickle at ``path`` (p in MPa -> Pa), or None until that run exists."""
+    import pickle
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        d = dict(pickle.load(f))
+    d["p"] = d["p"] * 1.0e6
+    if "y" not in d:                                       # fig-4 pickles store x
+        d["y"] = d["x"]
+    print(f"[ppu-porepy] {os.path.basename(path)}   cached total_it={int(d.get('total_it', 0))}", flush=True)
+    return d
+
+
+def _scheme_handles(panels):
+    """Legend handles for the schemes actually drawn; PPU is labelled PPU-PorePy."""
+    drawn = set().union(*panels) if panels else set()
+    handles = C.scheme_handles(only=[sk for sk in ps.SCHEMES if sk in drawn])
+    for h in handles:
+        if h.get_label() == ps.SCHEMES["ppu"]["label"]:
+            h.set_label(PPU_POREPY_LABEL)
+    return handles
+
+
 def compute(N=N, parallel=True, skip=frozenset()):
     if parallel:
         m.prebuild_table_caches()
@@ -99,6 +125,10 @@ def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
         for j, orient in enumerate(ORIENTS):
             ax_tp = axes[i, j]; ax_p = ax_tp.twinx(); ax_p.grid(False)
             res = {sk: out[(sk, lvl, orient)] for sk in ps.SCHEMES if (sk, lvl, orient) in out}
+            ppu_pp = _load_ppu_porepy(os.path.join(
+                C.CACHE_DIR, f"fig4_porepy_{_PP_CASE[lvl]}_{orient}_ppu_l{m.TABLE_LEVEL}.pkl"))
+            if ppu_pp is not None:                          # PorePy PPU, drawn in the PPU style
+                res["ppu"] = ppu_pp
             panels.append(res)
             C.draw_tp(ax_tp, ax_p, res,
                       ref_T=C.csmp_ref(f"fig_4_{lvl}_{orient}", "T"),
@@ -131,7 +161,7 @@ def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
     for ax in axes[-1, :]:
         ax.set_xlabel(ps.DIST_LABEL)
 
-    handles = C.scheme_handles(only=C.active_schemes(skip))
+    handles = _scheme_handles(panels)
     if has_pp:                                          # key the overlay only when it was actually drawn
         handles.append(Line2D([0], [0], color=ps.POREPY["warm"], ls=ps.POREPY["dash"], lw=ps.CURVE_LW,
                               label=POREPY_LABEL))
@@ -146,7 +176,7 @@ def plot(out, stem="reproduce_weis_fig_4", skip=frozenset()):
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description="Weis (2014) Fig 4 (single-phase heating).")
-    ap.add_argument("--skip-solver", default="", dest="skip",
+    ap.add_argument("--skip-solver", default=DEFAULT_SKIP, dest="skip",
                     help="comma-separated solvers to skip: ppu, hu, hu-mwp, hu-porepy")
     args = ap.parse_args(argv)
     skip = C.parse_skip(args.skip)
